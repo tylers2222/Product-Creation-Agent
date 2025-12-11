@@ -1,0 +1,2 @@
+class FirecrawlError(Exception):
+    pass

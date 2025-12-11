@@ -1,0 +1,3 @@
+class EmbeddingsError(Exception):
+    pass
+
