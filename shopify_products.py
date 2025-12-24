@@ -1,9 +1,9 @@
 import logging
 import shopify
-from vector_database.db import vector_database, vector_db
-from vector_database.embeddings import Embeddor, Embeddings
-from vector_database.services import add_products_to_vector_db
-from shopify_api.client import ShopifyClient, Shop
+from agents.infrastructure.vector_database.db import vector_database, vector_db
+from agents.infrastructure.vector_database.embeddings import Embeddor, Embeddings
+from agents.agent.services import add_products_to_vector_db
+from agents.infrastructure.shopify_api.client import ShopifyClient, Shop
 
 def send_products_to_vector_database():
     """A function manually run in staging to populate the vector database with shopify products"""
