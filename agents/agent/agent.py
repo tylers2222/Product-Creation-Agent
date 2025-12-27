@@ -1,11 +1,12 @@
 from langgraph.graph import START, StateGraph, END
 from typing import Protocol, TypedDict
 import structlog
+import json
+from pydantic import BaseModel
 
 from qdrant_client.models import PointStruct
 from agents.infrastructure.shopify_api.product_schema import DraftProduct, DraftResponse
 from .schema import ScraperResponse
-from pydantic import BaseModel
 from agents.infrastructure.shopify_api.client import Shop
 from agents.infrastructure.firecrawl_api.client import Scraper
 from agents.infrastructure.vector_database.db import VectorDb
@@ -18,8 +19,8 @@ from .services import search_products_comprehensive, shop_svc
 from langchain_core.output_parsers import PydanticOutputParser
 from .llm import LLM, llm_client
 from .prompts import markdown_summariser_prompt
-from .tools import ServiceContainer, create_all_tools
-import json
+from .tools import create_all_tools
+from config import create_service_container, ServiceContainer
 
 # Configure structlog for scoped logging
 structlog.configure(
@@ -38,17 +39,20 @@ structlog.configure(
 logger = structlog.get_logger()
 
 class AgentProtocol(Protocol):
+    """Protocol for abstracting the agent workflow"""
     def service_workflow(self, query: str):
         ...
 
 class AgentState(TypedDict):
+    """State of agent operations"""
     query: str # the original query the user writes
     extract_query: str # the extracted query from hte LLM
     validated_data: dict # dictionary representation of the product and its internal data
     web_scraped_data: ScraperResponse # the result of the web scraping operation
     similar_products: list[PointStruct]
     filled_data: DraftProduct # fill the draft struct with draft data
-    shopify_response: dict
+    shopify_response: DraftResponse
+    inventory_filled: bool
 
 # Pydantic models for responses
 class QueryResponse(BaseModel):
@@ -84,13 +88,15 @@ class ShopifyProductWorkflow:
         self.workflow.add_node("query_synthesis", self.query_synthesis)
         self.workflow.add_node("fill_data", self.fill_data)
         self.workflow.add_node("post_shopify", self.post_shopify)
+        self.workflow.add_node("inventory_filled", self.inventory)
 
         self.workflow.add_edge(START, "query_extract")
         self.workflow.add_edge("query_extract", "query_scrape")
         self.workflow.add_edge("query_scrape", "query_synthesis")
         self.workflow.add_edge("query_synthesis", "fill_data")
         self.workflow.add_edge("fill_data", "post_shopify")
-        self.workflow.add_edge("post_shopify", END)
+        self.workflow.add_edge("post_shopify", "inventory_filled")
+        self.workflow.add_edge("inventory_filled", END)
 
         logger.info("Successfully completed workflow")
         self.app = self.workflow.compile()
@@ -108,13 +114,67 @@ Your job is to UNDERSTAND what the user is asking for and extract key informatio
 REQUIRED OUTPUTS:
 1. query: The search query to use for finding the product online (usually the product name and brand)
 2. extract_query: A refined query focusing on key product identifiers (brand + product name)
-3. validated_data: A dictionary containing the variants information
+3. validated_data: A dictionary with this EXACT structure:
+   {{
+     "brand_name": "string",
+     "product_name": "string",
+     "variants": [
+       {{
+         "option1_value": {{"option_name": "Size", "option_value": "50 g"}},
+         "option2_value": {{"option_name": "Flavor", "option_value": "Chocolate"}} OR null,
+         "option3_value": null OR {{"option_name": "Type", "option_value": "Premium"}},
+         "sku": 12345,
+         "barcode": "0810095637971",
+         "price": 4.95,
+         "compare_at": null OR 9.99,
+         "product_weight": 0.05,
+         "inventory_at_stores": null OR {{"city": 15, "south_melbourne": 15}}
+       }}
+     ]
+   }}
 
-For EACH variant the user mentions, you need to find:
-- Size/quantity (5lb, 2kg, 1000g, etc.)
-- Flavor/variant type (Chocolate, Vanilla, etc.) - if applicable
+CRITICAL RULES:
+1. option1_value, option2_value, option3_value MUST be objects with "option_name" and "option_value" fields, NOT strings
+2. product_weight MUST be in KILOGRAMS (kg). Convert: 50g = 0.05, 2kg = 2.0, 5lb ≈ 2.27
+3. Extract ALL variants mentioned - each unique size/flavor combination is a separate variant
+4. If a variant has multiple options (size + flavor), include BOTH option1_value AND option2_value
+5. barcode should be a string (can have leading zeros)
+6. If compare_at price is not mentioned, use null
+7. INVENTORY_AT_STORES: Look for inventory numbers in the input. If mentioned, extract as {{"city": <number>, "south_melbourne": <number>}}. Common patterns:
+   - "city: 15, south_melbourne: 15"
+   - "inventory: 15, 15"
+   - "City: 15, South Melbourne: 15"
+   - "inventory_at_stores: {{city: 15, south_melbourne: 15}}"
+   - If inventory numbers are the same for all variants, apply to all variants
+   - If inventory numbers are NOT mentioned anywhere in the input, use null
 
-Do NOT require a specific format. Use your understanding to extract the information.
+EXAMPLE 1 (with inventory):
+Input: "Create EHP OxyShred Protein Lean Bar, 50g in White Choc Caramel, Strawberries & Cream, Choc Peanut Caramel, Cookies & Cream, all $4.95, inventory: city=15, south_melbourne=15"
+
+Output validated_data:
+{{
+  "brand_name": "EHP",
+  "product_name": "OxyShred Protein Lean Bar",
+  "variants": [
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "White Choc Caramel"}}, "sku": 922026, "barcode": "0810095637971", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Strawberries & Cream"}}, "sku": 922028, "barcode": "0810095637933", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Choc Peanut Caramel"}}, "sku": 922027, "barcode": "0810095637988", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Cookies & Cream"}}, "sku": 922029, "barcode": "0810095637945", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}}
+  ]
+}}
+
+EXAMPLE 2 (without inventory):
+Input: "Create EHP OxyShred Protein Lean Bar, 50g in White Choc Caramel, Strawberries & Cream, all $4.95"
+
+Output validated_data:
+{{
+  "brand_name": "EHP",
+  "product_name": "OxyShred Protein Lean Bar",
+  "variants": [
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "White Choc Caramel"}}, "sku": 922026, "barcode": "0810095637971", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": null}},
+    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Strawberries & Cream"}}, "sku": 922028, "barcode": "0810095637933", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": null}}
+  ]
+}}
 
 {format_instructions}
 """
@@ -155,7 +215,6 @@ Do NOT require a specific format. Use your understanding to extract the informat
             logger.info(f"Summarized markdown at index {needed['idx']}")
             web_data.result[needed["idx"]] = result
         
-        # Step 2: Evaluate vector DB search relevance
         similar_products = state["similar_products"]
         target_info = web_data.query
         similar_products_simple = [
@@ -167,7 +226,6 @@ Do NOT require a specific format. Use your understanding to extract the informat
             for p in similar_products
         ]
 
-        # Parse the relevance response
         parser = PydanticOutputParser(pydantic_object=VectorRelevanceResponse)
         format_instructions = parser.get_format_instructions()
         
@@ -208,7 +266,6 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
         logger.info(f"Action taken: {relevance_result.action_taken}")
         logger.info(f"Reasoning: {relevance_result.reasoning}")
         
-        similar_products = similar_products
         if relevance_result.action_taken == "requery":
             # Note: The LLM returns simplified dicts, but we need to keep original PointStruct objects
             # For now, just log that a requery happened - the tool should have updated the data
@@ -242,11 +299,29 @@ SIMILAR PRODUCTS (for style/formatting reference):
 
 INSTRUCTIONS:
 1. VARIANTS: Create exactly the variants specified in validated_data (with their SKUs, barcodes, prices)
-2. TITLE: Extract complete product name from scraped data
+2. TITLE: Extract complete product name from scraped data -> Vendor Name then product name ALWAYS
 3. DESCRIPTION: Synthesize from scraped data in HTML format
 4. VENDOR: Extract brand name from scraped data
 5. TYPE: Copy the product_type from similar products (they show our store's categories)
 6. TAGS: Copy tag style from similar products - match their format (uppercase/lowercase, style)
+7. LEAD_OPTION: Set to the option_name from option1_value (usually "Size")
+8. BABY_OPTIONS: CRITICAL - If ANY variant has option2_value, you MUST set baby_options to a list containing the option_name from option2_value (e.g., ["Flavor"] or ["Flavour"]). If variants have option3_value, add that option_name too (e.g., ["Flavor", "Type"]). If NO variants have option2_value, set baby_options to null.
+
+CRITICAL RULE FOR BABY_OPTIONS:
+- If variants have option2_value → baby_options MUST be ["Flavor"] (or whatever the option_name is)
+- If variants have option3_value → baby_options MUST include both option names (e.g., ["Flavor", "Type"])
+- If NO variants have option2_value → baby_options MUST be null
+
+EXAMPLE:
+If variants are:
+[
+  {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Chocolate"}}, ...}},
+  {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Vanilla"}}, ...}}
+]
+
+Then:
+- lead_option: "Size"
+- baby_options: ["Flavor"]  ← MUST include this!
 
 EXAMPLE - If similar products have:
 - Type: "Protein Powder"
@@ -277,6 +352,32 @@ Then use the SAME style for your product.
             "shopify_response": shop_response
         }
 
+    def inventory(self, state: AgentState):
+        draft_response = state.get("shopify_response")
+
+        inv_item_ids = draft_response.variant_inventory_item_ids
+
+        completed = 0
+        failed = 0
+        for item in inv_item_ids:
+            try:
+                completed = self.shop.fill_inventory(inventory_data=item)
+                if completed:
+                    completed += 1
+            except Exception as e:
+                logger.error(f"item {item.inventory_item_id} failed to updated inventory")
+                failed += 1
+
+        logger.info(f"Completed inventory, Completed {completed}, Failed {failed}")
+        if failed > 0:
+            return {
+                "inventory_filled": False
+            }
+        
+        return {
+                "inventory_filled": True
+            } 
+
     async def service_workflow(self, query: str) -> DraftResponse:
         print("Starting Workflow")
 
@@ -284,13 +385,12 @@ Then use the SAME style for your product.
         return result.get("shopify_response", None)
 
 def create_agent() -> ShopifyProductWorkflow:
-    sc = ServiceContainer(
-        vector_db=vector_database(),
-        embeddor=Embeddings(),
-        scraper=FirecrawlClient(),
-        shop=ShopifyClient(),
-        llm=llm_client()
-    )
-    tools = create_all_tools(sc)
+    try:
+        sc = create_service_container()  # Call the function!
+        tools = create_all_tools(sc)
 
-    return ShopifyProductWorkflow(shop=sc.shop, scraper=sc.scraper, vector_db=sc.vector_db, embeddor=sc.embeddor, llm=sc.llm, tools=tools)
+        return ShopifyProductWorkflow(shop=sc.shop, scraper=sc.scraper, vector_db=sc.vector_db, embeddor=sc.embeddor, llm=sc.llm, tools=tools)
+
+    except AttributeError as a:
+        logger.error("Service Container: %s", sc.to_json())
+        raise AttributeError(a)

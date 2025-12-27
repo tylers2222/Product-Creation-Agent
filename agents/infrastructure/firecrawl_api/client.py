@@ -31,9 +31,9 @@ class Scraper(Protocol):
 
 
 class FirecrawlClient:
-    def __init__(self):
+    def __init__(self, api_key: str):
         logger.info("Initialising Firecrawl Client...")
-        self.client = Firecrawl(api_key=firecrawl_api_key)
+        self.client = Firecrawl(api_key=api_key)
         logger.info("Initialised Firecrawl Client Successful")
 
     def scrape_and_search_site(self, query: str, limit: int = 5):

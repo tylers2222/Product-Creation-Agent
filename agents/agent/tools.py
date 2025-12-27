@@ -1,19 +1,15 @@
-from qdrant_client.models import PointStruct
+
+from langchain.tools import tool
+import structlog
+from dataclasses import dataclass
+
 from agents.infrastructure.firecrawl_api.client import FirecrawlClient, FireResult, Scraper
 from agents.infrastructure.shopify_api.client import ShopifyClient, DraftProduct, Shop
 from agents.infrastructure.vector_database.db import VectorDb, vector_database
 from agents.infrastructure.vector_database.embeddings import Embeddings, Embeddor
-from langchain.tools import tool
-from .services import scrape_results_svc, embed_search_svc, similarity_search_svc, search_products_comprehensive
-from .schema import ScraperResponse
-from .llm import LLM
-import logging
-import traceback
-from pydantic import BaseModel, Field
-from typing import Optional
-import structlog
-import inspect
-from dataclasses import dataclass
+from config import ServiceContainer
+from .services import embed_search_svc, similarity_search_svc, search_products_comprehensive
+
 
 structlog.configure(
     processors=[
@@ -24,14 +20,6 @@ structlog.configure(
 )
 # Get the base logger
 base_logger = structlog.get_logger()
-
-@dataclass
-class ServiceContainer:
-    vector_db:  VectorDb
-    embeddor:   Embeddor
-    scraper:    Scraper
-    shop:       Shop
-    llm:        LLM
 
 def create_all_tools(container: ServiceContainer) -> list:
     @tool
@@ -60,3 +48,4 @@ def create_all_tools(container: ServiceContainer) -> list:
 #-------------------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------------------------
+

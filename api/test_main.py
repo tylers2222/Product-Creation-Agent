@@ -5,8 +5,8 @@ import time
 from fastapi.testclient import TestClient
 
 from main import create_app
-from api.models.product_generation import PromptVariant, Variant, Option
-from agents.infrastructure.shopify_api.product_schema import DraftResponse
+from api.models.product_generation import PromptVariant
+from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, Option, InventoryAtStores
 from db.client import RedisDatabase
 
 # Create mock data using the PromptVariant structure
@@ -16,43 +16,53 @@ mock_data = PromptVariant(
     variants=[
         # Variant 1: 2lb Chocolate
         Variant(
-            option_1=Option(option_name="Size", option_value="2 lb"),
-            option_2=Option(option_name="Flavour", option_value="Chocolate"),
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate"),
             sku=922001,
             barcode="0810095637971",
-            price=49.95
+            price=49.95,
+            product_weight=0.91,
+            inventory_at_stores=InventoryAtStores(city=100, south_melbourne=100)
         ),
         # Variant 2: 2lb Vanilla
         Variant(
-            option_1=Option(option_name="Size", option_value="2 lb"),
-            option_2=Option(option_name="Flavour", option_value="Vanilla"),
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Vanilla"),
             sku=922002,
             barcode="0810095637972",
-            price=49.95
+            price=49.95,
+            product_weight=0.91,
+            inventory_at_stores=InventoryAtStores(city=100, south_melbourne=100)
         ),
         # Variant 3: 5lb Chocolate
         Variant(
-            option_1=Option(option_name="Size", option_value="5 lb"),
-            option_2=Option(option_name="Flavour", option_value="Chocolate"),
+            option1_value=Option(option_name="Size", option_value="5 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate"),
             sku=922003,
             barcode="0810095637973",
-            price=89.95
+            price=89.95,
+            product_weight=2.27,
+            inventory_at_stores=InventoryAtStores(city=100, south_melbourne=100)
         ),
         # Variant 4: 5lb Vanilla
         Variant(
-            option_1=Option(option_name="Size", option_value="5 lb"),
-            option_2=Option(option_name="Flavour", option_value="Vanilla"),
+            option1_value=Option(option_name="Size", option_value="5 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Vanilla"),
             sku=922004,
             barcode="0810095637974",
-            price=89.95
+            price=89.95,
+            product_weight=2.27,
+            inventory_at_stores=InventoryAtStores(city=100, south_melbourne=100)
         ),
-        # Variant 5: 2lb Strawberry (with 3 options)
+        # Variant 5: 2lb Strawberry
         Variant(
-            option_1=Option(option_name="Size", option_value="2 lb"),
-            option_2=Option(option_name="Flavour", option_value="Strawberry"),
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Strawberry"),
             sku=922005,
             barcode="0810095637975",
-            price=49.95
+            price=49.95,
+            product_weight=0.91,
+            inventory_at_stores=InventoryAtStores(city=100, south_melbourne=100)
         ),
     ]
 )
@@ -64,44 +74,53 @@ mock_data_2 = PromptVariant(
     variants=[
         # Variant 1: 2lb Chocolate Peanut Butter
         Variant(
-            option_1=Option(option_name="Size", option_value="2 lb"),
-            option_2=Option(option_name="Flavour", option_value="Chocolate Peanut Butter"),
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate Peanut Butter"),
             sku=923001,
             barcode="0810095638001",
-            price=54.95
+            price=54.95,
+            product_weight=0.91,
+            inventory_at_stores=InventoryAtStores(city=50, south_melbourne=50)
         ),
         # Variant 2: 2lb Vanilla
         Variant(
-            option_1=Option(option_name="Size", option_value="2 lb"),
-            option_2=Option(option_name="Flavour", option_value="Vanilla"),
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Vanilla"),
             sku=923002,
             barcode="0810095638002",
-            price=54.95
+            price=54.95,
+            product_weight=0.91,
+            inventory_at_stores=InventoryAtStores(city=50, south_melbourne=50)
         ),
         # Variant 3: 4lb Chocolate Peanut Butter
         Variant(
-            option_1=Option(option_name="Size", option_value="4 lb"),
-            option_2=Option(option_name="Flavour", option_value="Chocolate Peanut Butter"),
+            option1_value=Option(option_name="Size", option_value="4 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate Peanut Butter"),
             sku=923003,
             barcode="0810095638003",
-            price=89.95
+            price=89.95,
+            product_weight=1.81,
+            inventory_at_stores=InventoryAtStores(city=50, south_melbourne=50)
         ),
         # Variant 4: 4lb Vanilla
         Variant(
-            option_1=Option(option_name="Size", option_value="4 lb"),
-            option_2=Option(option_name="Flavour", option_value="Vanilla"),
+            option1_value=Option(option_name="Size", option_value="4 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Vanilla"),
             sku=923004,
             barcode="0810095638004",
-            price=89.95
+            price=89.95,
+            product_weight=1.81,
+            inventory_at_stores=InventoryAtStores(city=50, south_melbourne=50)
         ),
         # Variant 5: 4lb Cookies & Cream (with 3 options)
         Variant(
-            option_1=Option(option_name="Size", option_value="4 lb"),
-            option_2=Option(option_name="Flavour", option_value="Cookies & Cream"),
-            option_3=Option(option_name="Type", option_value="Premium"),
+            option1_value=Option(option_name="Size", option_value="4 lb"),
+            option2_value=Option(option_name="Flavour", option_value="Cookies & Cream"),
             sku=923005,
             barcode="0810095638005",
-            price=94.95
+            price=94.95,
+            product_weight=1.81,
+            inventory_at_stores=InventoryAtStores(city=50, south_melbourne=50)
         )
     ]
 )
@@ -334,8 +353,39 @@ def integration_test_post():
             if run_number_2 > 100:  # Max 100 iterations (20 minutes at 12 seconds each)
                 raise Exception(f"Test timeout: Job {request_id_2} did not complete after {run_number_2} iterations")
 
+def test_sending_same_time():
+    """A test to simulate multiple request handled async"""
+    redis_db = RedisDatabase()
+    test_app = create_app(job_database=redis_db)
+    with TestClient(test_app) as client:
+        first_product = mock_data.model_dump()
+        second_product = mock_data_2.model_dump()
+
+        url = "/internal/product_generation"
+        response_one = client.post(url=url, json=first_product, timeout=5000)
+        response_two = client.post(url=url, json=second_product, timeout=5000)
+
+        print("Response One", response_one.json())
+        print("Response Two", response_two.json())
+
+        resp_2_dict = response_two.json()
+        resp_2_req_id = resp_2_dict["request_id"]
+
+        while True:
+            # Dont shut function down while task is executing
+            time.sleep(20)
+            job_status = redis_db.hget_data(database_name="agent:jobs", key=resp_2_req_id)
+
+            job_status_dict = json.loads(job_status)
+            completed = job_status_dict.get("completed")
+            if completed:
+                break
+
+        print("Completed all tasks")
+
 if __name__ == "__main__":
     #test_read_main()
     #test_getting_data()
     #test_posting_to_agent()
-    integration_test_post()
+    #integration_test_post()
+    test_sending_same_time()

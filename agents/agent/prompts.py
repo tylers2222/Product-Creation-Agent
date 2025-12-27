@@ -1,6 +1,7 @@
 
 #-----------------------------------------------------------------------------------------------
 from pydantic import BaseModel
+from ..infrastructure.shopify_api.product_schema import Variant
 
 
 SYNTHESIS_AGENT_PROMPT = """You are a vector database search quality control agent.
@@ -204,17 +205,6 @@ You are an expert in scanning markdown for the section of data best realting to 
 #-----------------------------------------------------------------------------------------------
 # USER INPUT TEMPLATE
 #-----------------------------------------------------------------------------------------------
-class Option(BaseModel):
-  option_name: str
-  option_value: str
-
-class Variant(BaseModel):
-  option_1: Option
-  option_2: Option | None = None
-  option_3: Option | None = None
-  sku: int
-  barcode: str
-  price: float
 
 class PromptVariant(BaseModel):
     """Schema for variant data when using format_product_input helper"""
@@ -222,6 +212,8 @@ class PromptVariant(BaseModel):
     product_name: str
 
     variants: list[Variant]
+
+
 
 def format_product_input(prompt_variant: PromptVariant) -> str:
     """
@@ -258,19 +250,34 @@ def format_product_input(prompt_variant: PromptVariant) -> str:
     for i, variant in enumerate(prompt_variant.variants, 1):
         variant_parts = []
         
-        # Add variant options
-        variant_parts.append(f"Option 1: {variant.option_1}")
+        # Add variant options - extract the option_value from Option objects
+        option1_name = variant.option1_value.option_name
+        option1_val = variant.option1_value.option_value
+        variant_parts.append(f"{option1_name}: {option1_val}")
         
-        if variant.option_2:
-            variant_parts.append(f"Option 2: {variant.option_2}")
+        if variant.option2_value:
+            option2_name = variant.option2_value.option_name
+            option2_val = variant.option2_value.option_value
+            variant_parts.append(f"{option2_name}: {option2_val}")
         
-        if variant.option_3:
-            variant_parts.append(f"Option 3: {variant.option_3}")
+        if variant.option3_value:
+            option3_name = variant.option3_value.option_name
+            option3_val = variant.option3_value.option_value
+            variant_parts.append(f"{option3_name}: {option3_val}")
         
         # Add SKU, barcode, and price
         variant_parts.append(f"SKU: {variant.sku}")
         variant_parts.append(f"Barcode: {variant.barcode}")
         variant_parts.append(f"Price: ${variant.price:.2f}")
+        
+        if variant.product_weight:
+            variant_parts.append(f"Weight: {variant.product_weight} kg")
+        
+        # Add inventory information if present
+        if variant.inventory_at_stores:
+            city = variant.inventory_at_stores.city
+            south_melbourne = variant.inventory_at_stores.south_melbourne
+            variant_parts.append(f"Inventory: city={city}, south_melbourne={south_melbourne}")
         
         lines.append(f"  {i}. {', '.join(variant_parts)}")
     

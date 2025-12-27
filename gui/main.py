@@ -2,13 +2,101 @@ from customtkinter import *
 from PIL import Image
 import sys
 import os
+import requests
+import threading
+import time
+import json
+from datetime import datetime, date
+import hashlib
 
 # Add parent directory to path to import agent modules
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from agents.agent.prompts import PromptVariant, Variant, Option, format_product_input
+from api.models.product_generation import PromptVariant
+from agents.infrastructure.shopify_api.product_schema import Variant, Option, InventoryAtStores
+from agents.agent.prompts import format_product_input
+
+# ========================================
+# API CONFIGURATION
+# ========================================
+# Change this URL for ngrok or production
+API_BASE_URL = "https://27cccf53b1df.ngrok-free.app"  # Change to your ngrok URL when needed
+# API_BASE_URL = "https://your-ngrok-url.ngrok.io"
+
+# ========================================
+# AUTHENTICATION CONFIGURATION
+# ========================================
+# Set your password here
+CORRECT_PASSWORD = "123456"
+
+# File to track daily logins
+LOGIN_TRACKING_FILE = "login_tracking.json"
+
+def get_device_id():
+    """Get a unique identifier for this device"""
+    # Use MAC address as device identifier
+    import uuid
+    return str(uuid.getnode())
+
+def load_login_data():
+    """Load login tracking data"""
+    if os.path.exists(LOGIN_TRACKING_FILE):
+        try:
+            with open(LOGIN_TRACKING_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_login_data(data):
+    """Save login tracking data"""
+    with open(LOGIN_TRACKING_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def check_daily_login():
+    """Check if user has logged in today on this device"""
+    device_id = get_device_id()
+    today = str(date.today())
+    
+    login_data = load_login_data()
+    device_data = login_data.get(device_id, {})
+    
+    # Check if last login was today
+    last_login = device_data.get("last_login")
+    return last_login == today
+
+def record_login():
+    """Record that user logged in today on this device"""
+    device_id = get_device_id()
+    today = str(date.today())
+    now = datetime.now().isoformat()
+    
+    login_data = load_login_data()
+    
+    if device_id not in login_data:
+        login_data[device_id] = {
+            "first_login": now,
+            "total_logins": 0,
+            "login_dates": []
+        }
+    
+    device_data = login_data[device_id]
+    device_data["last_login"] = today
+    device_data["last_login_time"] = now
+    device_data["total_logins"] = device_data.get("total_logins", 0) + 1
+    
+    # Track unique login dates
+    if "login_dates" not in device_data:
+        device_data["login_dates"] = []
+    if today not in device_data["login_dates"]:
+        device_data["login_dates"].append(today)
+    
+    save_login_data(login_data)
+    print(f"✅ Login recorded for device {device_id[:8]}... on {today}")
+    print(f"   Total logins: {device_data['total_logins']}")
+    print(f"   Unique days: {len(device_data['login_dates'])}")
 
 app = CTk()
 app.geometry("1500x980")
@@ -16,6 +104,9 @@ app.geometry("1500x980")
 app.grid_rowconfigure(0, weight=1)
 app.grid_columnconfigure(0, weight=1, uniform="cols")
 app.grid_columnconfigure(1, weight=1, uniform="cols")
+
+# Global variable to track if user needs to log in
+needs_login = not check_daily_login()
 
 def page_1(parent):
     """Login page with 6-digit passcode authentication"""
@@ -153,16 +244,36 @@ def page_1(parent):
         """Get the complete passcode"""
         return "".join(entry.get() for entry in passcode_entries)
 
+    # Error message label
+    error_label = CTkLabel(
+        login_container,
+        text="",
+        font=("Helvetica", 11),
+        text_color="#ff4444"
+    )
+    error_label.pack(pady=(0, 10))
+
     def check_login():
         """Validate passcode"""
         passcode = get_passcode()
         if len(passcode) != 6:
+            error_label.configure(text="⚠️ Please enter 6 digits")
             return False
-        # Add your validation logic here
-
-        if passcode == "123456":
+        
+        # Check password
+        if passcode == CORRECT_PASSWORD:
+            # Record login
+            record_login()
+            error_label.configure(text="")
             show_frame(page_two)
-        return True
+            return True
+        else:
+            error_label.configure(text="❌ Incorrect password")
+            # Clear all entries
+            for entry in passcode_entries:
+                entry.delete(0, 'end')
+            passcode_entries[0].focus()
+            return False
 
     # Login button
     login_button = CTkButton(
@@ -327,11 +438,12 @@ def page_2(parent):
     main_content_area = CTkFrame(page_2_content, fg_color="#1a1a1a")
     main_content_area.grid(row=0, column=0, sticky="nsew")
     
-    # Configure main_content_area grid for title, description, text display, and button
+    # Configure main_content_area grid for title, description, text display, status, and button
     main_content_area.grid_rowconfigure(0, weight=0)  # Title row - fixed height
     main_content_area.grid_rowconfigure(1, weight=0)  # Description row - fixed height
     main_content_area.grid_rowconfigure(2, weight=1)  # Text area row - expands
-    main_content_area.grid_rowconfigure(3, weight=0)  # Button row - fixed height
+    main_content_area.grid_rowconfigure(3, weight=0)  # Status label row - fixed height
+    main_content_area.grid_rowconfigure(4, weight=0)  # Button row - fixed height
     main_content_area.grid_columnconfigure(0, weight=1)  # Column expands
     
     # Title that sits above the text box (updates based on selected button)
@@ -373,6 +485,15 @@ def page_2(parent):
     text_display_area.insert("1.0", "Query will appear here...\n\nFill out the form on the right to generate the query.")
     text_display_area.configure(state="disabled")  # Make it read-only
     
+    # Status label for showing request progress
+    status_label = CTkLabel(
+        main_content_area,
+        text="",
+        font=("Helvetica", 12),
+        text_color="#a8d5ba"
+    )
+    status_label.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
+    
     # Send Request button - full width underneath text box
     send_request_btn = CTkButton(
         main_content_area,
@@ -383,9 +504,9 @@ def page_2(parent):
         text_color="#ffffff",
         font=("Helvetica", 14, "bold"),
         corner_radius=5,
-        command=lambda: print("Send Request clicked")  # Placeholder for POST request
+        command=lambda: send_request()
     )
-    send_request_btn.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
+    send_request_btn.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 20))
     
     # Helper function to update the query text
     def update_query_display(query_text):
@@ -395,6 +516,205 @@ def page_2(parent):
         text_display_area.insert("1.0", query_text)  # Insert new text
         text_display_area.configure(state="disabled")  # Make read-only again
         text_display_area.see("1.0")  # Scroll to top
+    
+    def update_status(message, color="#a8d5ba"):
+        """Update status label with message and color"""
+        status_label.configure(text=message, text_color=color)
+    
+    def build_request_payload():
+        """Build the JSON payload from form_data"""
+        try:
+            # Build variants list
+            variants_list = []
+            for variant_data in form_data["variants"]:
+                # Skip if option_1_value is empty
+                if not variant_data.get("option_1_value"):
+                    continue
+                    
+                # Create Option objects
+                option_1 = Option(
+                    option_name=variant_data.get("option_1_name", "Option 1"),
+                    option_value=variant_data.get("option_1_value", "")
+                )
+                option_2 = None
+                option_3 = None
+                
+                if variant_data.get("option_2_value"):
+                    option_2 = Option(
+                        option_name=variant_data.get("option_2_name", "Option 2"),
+                        option_value=variant_data["option_2_value"]
+                    )
+                if variant_data.get("option_3_value"):
+                    option_3 = Option(
+                        option_name=variant_data.get("option_3_name", "Option 3"),
+                        option_value=variant_data["option_3_value"]
+                    )
+                
+                # Parse SKU, barcode, price, weight
+                try:
+                    sku_val = int(variant_data.get("sku", 0)) if variant_data.get("sku") and str(variant_data.get("sku")).strip() else 0
+                except (ValueError, TypeError):
+                    sku_val = 0
+                
+                try:
+                    price_val = float(variant_data.get("price", 0.0)) if variant_data.get("price") and str(variant_data.get("price")).strip() else 0.0
+                except (ValueError, TypeError):
+                    price_val = 0.0
+                
+                try:
+                    weight_val = float(variant_data.get("product_weight", 0.0)) if variant_data.get("product_weight") and str(variant_data.get("product_weight")).strip() else 0.0
+                except (ValueError, TypeError):
+                    weight_val = 0.0
+                
+                # Get inventory values
+                try:
+                    city_inv = int(variant_data.get("inventory_city", "")) if variant_data.get("inventory_city") and str(variant_data.get("inventory_city")).strip() else None
+                except (ValueError, TypeError):
+                    city_inv = None
+                
+                try:
+                    south_inv = int(variant_data.get("inventory_south_melbourne", "")) if variant_data.get("inventory_south_melbourne") and str(variant_data.get("inventory_south_melbourne")).strip() else None
+                except (ValueError, TypeError):
+                    south_inv = None
+                
+                # Create InventoryAtStores if inventory data exists
+                inventory_at_stores = None
+                if city_inv is not None or south_inv is not None:
+                    inventory_at_stores = InventoryAtStores(
+                        city=city_inv,
+                        south_melbourne=south_inv
+                    )
+                
+                variant = Variant(
+                    option1_value=option_1,
+                    option2_value=option_2,
+                    option3_value=option_3,
+                    sku=sku_val,
+                    barcode=str(variant_data.get("barcode", "")),
+                    price=price_val,
+                    product_weight=weight_val,
+                    inventory_at_stores=inventory_at_stores
+                )
+                variants_list.append(variant)
+            
+            # Create PromptVariant object
+            prompt_variant = PromptVariant(
+                brand_name=form_data.get("brand_name", ""),
+                product_name=form_data.get("product_name", ""),
+                variants=variants_list
+            )
+            
+            return prompt_variant.model_dump()
+        except Exception as e:
+            update_status(f"Error building payload: {str(e)}", "#ff4444")
+            return None
+    
+    def poll_status(request_id):
+        """Poll the job status endpoint every 20 seconds"""
+        poll_url = f"{API_BASE_URL}/internal/product_generation/{request_id}"
+        timeout_seconds = 180  # 3 minutes
+        start_time = time.time()
+        
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed > timeout_seconds:
+                app.after(0, lambda: update_status("⏱️ Request timed out after 3 minutes", "#ff9944"))
+                app.after(0, lambda: send_request_btn.configure(state="normal"))
+                break
+            
+            try:
+                # Increased timeout to 60 seconds for polling requests
+                response = requests.get(poll_url, timeout=250)
+                if response.status_code == 200:
+                    # Parse outer response
+                    outer_response = response.json()
+                    
+                    # The "data" field contains a JSON string, so parse it again
+                    if "data" in outer_response:
+                        job_data = json.loads(outer_response["data"])
+                    else:
+                        job_data = outer_response  # Fallback
+                    
+                    if job_data.get("completed"):
+                        app.after(0, lambda: update_status("✅ Product created successfully!", "#44ff44"))
+                        app.after(0, lambda: send_request_btn.configure(state="normal"))
+                        break
+                    else:
+                        # Still processing
+                        app.after(0, lambda: update_status(f"⏳ Processing... ({int(elapsed)}s)", "#a8d5ba"))
+                else:
+                    app.after(0, lambda s=response.status_code: update_status(f"❌ Error polling status: {s}", "#ff4444"))
+                    app.after(0, lambda: send_request_btn.configure(state="normal"))
+                    break
+            except requests.exceptions.Timeout:
+                # Timeout on this poll - continue to next poll attempt
+                app.after(0, lambda: update_status(f"⏳ Still processing... ({int(elapsed)}s, retrying)", "#a8d5ba"))
+            except Exception as e:
+                app.after(0, lambda e=e: update_status(f"❌ Polling error: {str(e)}", "#ff4444"))
+                app.after(0, lambda: send_request_btn.configure(state="normal"))
+                break
+            
+            time.sleep(20)  # Wait 20 seconds before next poll
+    
+    def send_request():
+        """Send POST request to create product"""
+        # Validate form data
+        if not form_data.get("brand_name") or not form_data.get("product_name"):
+            update_status("⚠️ Please fill in brand and product name", "#ff9944")
+            return
+        
+        if not form_data.get("variants") or len(form_data.get("variants", [])) == 0:
+            update_status("⚠️ Please add at least one variant", "#ff9944")
+            return
+        
+        # Validate each variant has SKU, barcode, and price filled
+        for idx, variant in enumerate(form_data.get("variants", [])):
+            if not variant.get("sku") or not str(variant.get("sku")).strip():
+                update_status(f"⚠️ Variant {idx + 1} is missing SKU", "#ff9944")
+                return
+            if not variant.get("barcode") or not str(variant.get("barcode")).strip():
+                update_status(f"⚠️ Variant {idx + 1} is missing barcode", "#ff9944")
+                return
+            if not variant.get("price") or not str(variant.get("price")).strip():
+                update_status(f"⚠️ Variant {idx + 1} is missing price", "#ff9944")
+                return
+        
+        # Build payload
+        payload = build_request_payload()
+        if not payload:
+            return  # Error message already shown by build_request_payload
+        
+        # Disable button during request
+        send_request_btn.configure(state="disabled")
+        update_status("📤 Sending request...", "#a8d5ba")
+        
+        def make_request():
+            try:
+                url = f"{API_BASE_URL}/internal/product_generation"
+                response = requests.post(url, json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    response_data = response.json()
+                    request_id = response_data.get("request_id")
+                    
+                    if request_id:
+                        app.after(0, lambda: update_status(f"✅ Request submitted! ID: {request_id[:8]}...", "#44ff44"))
+                        # Start polling in background thread
+                        poll_thread = threading.Thread(target=poll_status, args=(request_id,), daemon=True)
+                        poll_thread.start()
+                    else:
+                        app.after(0, lambda: update_status("❌ No request_id in response", "#ff4444"))
+                        app.after(0, lambda: send_request_btn.configure(state="normal"))
+                else:
+                    app.after(0, lambda: update_status(f"❌ Request failed: {response.status_code}", "#ff4444"))
+                    app.after(0, lambda: send_request_btn.configure(state="normal"))
+            except Exception as e:
+                app.after(0, lambda e=e: update_status(f"❌ Error: {str(e)}", "#ff4444"))
+                app.after(0, lambda: send_request_btn.configure(state="normal"))
+        
+        # Run request in background thread to avoid freezing GUI
+        request_thread = threading.Thread(target=make_request, daemon=True)
+        request_thread.start()
 
     # Right area (template/form area - stays fixed)
     template_fill_frame = CTkFrame(page_2_content, fg_color="#0F0F0F", corner_radius=0)
@@ -466,13 +786,39 @@ def page_2(parent):
                 except (ValueError, TypeError):
                     price_val = 0.0
                 
+                try:
+                    weight_val = float(variant_data.get("product_weight", 0.0)) if variant_data.get("product_weight") and str(variant_data.get("product_weight")).strip() else 0.0
+                except (ValueError, TypeError):
+                    weight_val = 0.0
+                
+                # Get inventory values for this specific variant
+                try:
+                    city_inv = int(variant_data.get("inventory_city", "")) if variant_data.get("inventory_city") and str(variant_data.get("inventory_city")).strip() else None
+                except (ValueError, TypeError):
+                    city_inv = None
+                
+                try:
+                    south_inv = int(variant_data.get("inventory_south_melbourne", "")) if variant_data.get("inventory_south_melbourne") and str(variant_data.get("inventory_south_melbourne")).strip() else None
+                except (ValueError, TypeError):
+                    south_inv = None
+                
+                # Create InventoryAtStores if inventory data exists for this variant
+                inventory_at_stores = None
+                if city_inv is not None or south_inv is not None:
+                    inventory_at_stores = InventoryAtStores(
+                        city=city_inv,
+                        south_melbourne=south_inv
+                    )
+                
                 variant = Variant(
-                    option_1=option_1,
-                    option_2=option_2,
-                    option_3=option_3,
+                    option1_value=option_1,
+                    option2_value=option_2,
+                    option3_value=option_3,
                     sku=sku_val,
                     barcode=str(variant_data.get("barcode", "")),
-                    price=price_val
+                    price=price_val,
+                    product_weight=weight_val,
+                    inventory_at_stores=inventory_at_stores
                 )
                 variants_list.append(variant)
             
@@ -602,15 +948,18 @@ def page_2(parent):
                 widget_idx = i + 1
                 if widget_idx < len(option_widgets[option_key]["value_frames"]):
                     option_widgets[option_key]["value_frames"][widget_idx]["entry"].configure(placeholder_text=f"Value {i + 1}")
+            generate_variants()  # Regenerate variants after removing a value
     
     def update_option_name(option_key, name):
         """Update option name"""
         option_data[option_key]["name"] = name
+        generate_variants()  # Regenerate variants when option name changes
     
     def update_option_value(option_key, value_idx, value):
         """Update an option value"""
         if value_idx < len(option_data[option_key]["values"]):
             option_data[option_key]["values"][value_idx] = value
+            generate_variants()  # Auto-generate variants when values change
     
     def create_option_section(option_key, label_text, required=True):
         """Create UI section for an option (name + values with + button)"""
@@ -663,14 +1012,6 @@ def page_2(parent):
     variants_display_frame = CTkFrame(scrollable_frame, fg_color="transparent")
     variants_display_frame.pack(fill="both", expand=True, padx=10, pady=(10, 10))
     
-    def generate_sku_base():
-        """Generate base SKU number"""
-        return 922000
-    
-    def generate_barcode_base():
-        """Generate base barcode"""
-        return "0810095637971"
-    
     def generate_variants():
         """Generate all variant combinations from option lists"""
         # Clear existing variants
@@ -701,9 +1042,6 @@ def page_2(parent):
         combinations = list(itertools.product(*option_lists))
         
         # Create variant for each combination
-        base_sku = generate_sku_base()
-        base_barcode = generate_barcode_base()
-        
         for idx, combo in enumerate(combinations):
             variant_data = {
                 "option_1_name": option_data["option_1"]["name"] or "Option 1",
@@ -712,9 +1050,12 @@ def page_2(parent):
                 "option_2_value": combo[1] if len(combo) > 1 else "",
                 "option_3_name": (option_data["option_3"]["name"] or "Option 3") if len(combo) > 2 else "",
                 "option_3_value": combo[2] if len(combo) > 2 else "",
-                "sku": str(base_sku + idx),
-                "barcode": str(int(base_barcode) + idx) if base_barcode.isdigit() else f"{base_barcode}{idx}",
-                "price": ""
+                "sku": "",  # User must fill this in
+                "barcode": "",  # User must fill this in
+                "price": "",
+                "product_weight": "",
+                "inventory_city": "",
+                "inventory_south_melbourne": ""
             }
             form_data["variants"].append(variant_data)
             create_variant_display(idx, variant_data)
@@ -726,6 +1067,10 @@ def page_2(parent):
         variant_frame = CTkFrame(variants_display_frame, fg_color="#1a1a1a", corner_radius=5)
         variant_frame.pack(fill="x", padx=5, pady=3)
         
+        # Header frame with variant name and close button
+        header_frame = CTkFrame(variant_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=10, pady=(8, 5))
+        
         # Variant header with combination (using option names)
         combo_text = f"{variant_data.get('option_1_name', 'Option 1')}: {variant_data.get('option_1_value', '')}"
         if variant_data.get("option_2_value"):
@@ -733,48 +1078,91 @@ def page_2(parent):
         if variant_data.get("option_3_value"):
             combo_text += f" + {variant_data.get('option_3_name', 'Option 3')}: {variant_data['option_3_value']}"
         
-        variant_header = CTkLabel(variant_frame, text=combo_text, font=("Helvetica", 11, "bold"), text_color="#a8d5ba")
-        variant_header.pack(anchor="w", padx=10, pady=(8, 5))
+        variant_header = CTkLabel(header_frame, text=combo_text, font=("Helvetica", 11, "bold"), text_color="#a8d5ba")
+        variant_header.pack(side="left", anchor="w")
         
-        # SKU, Barcode, Price in a row
+        # Close button (X) on the right side of header
+        close_btn = CTkButton(header_frame, text="×", width=30, height=30, 
+                             fg_color="#5a1a1a", hover_color="#ff4444", text_color="#ffffff",
+                             font=("Helvetica", 16, "bold"),
+                             command=lambda idx=variant_idx: remove_variant(idx))
+        close_btn.pack(side="right")
+        
+        # SKU, Barcode row
         details_frame = CTkFrame(variant_frame, fg_color="transparent")
         details_frame.pack(fill="x", padx=10, pady=5)
         
         # SKU
         sku_label = CTkLabel(details_frame, text="SKU", font=("Helvetica", 10), text_color="#909090")
         sku_label.pack(side="left", padx=(0, 5))
-        sku_entry = CTkEntry(details_frame, fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=100, height=30)
-        sku_entry.insert(0, variant_data["sku"])
+        sku_entry = CTkEntry(details_frame, placeholder_text="Required", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=100, height=30)
+        if variant_data["sku"]:
+            sku_entry.insert(0, variant_data["sku"])
         sku_entry.pack(side="left", padx=(0, 10))
         sku_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "sku", sku_entry.get()))
         
         # Barcode
         barcode_label = CTkLabel(details_frame, text="Barcode", font=("Helvetica", 10), text_color="#909090")
         barcode_label.pack(side="left", padx=(0, 5))
-        barcode_entry = CTkEntry(details_frame, fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=120, height=30)
-        barcode_entry.insert(0, variant_data["barcode"])
+        barcode_entry = CTkEntry(details_frame, placeholder_text="Required", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=150, height=30)
+        if variant_data["barcode"]:
+            barcode_entry.insert(0, variant_data["barcode"])
         barcode_entry.pack(side="left", padx=(0, 10))
         barcode_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "barcode", barcode_entry.get()))
         
+        # Price, Weight row
+        price_weight_frame = CTkFrame(variant_frame, fg_color="transparent")
+        price_weight_frame.pack(fill="x", padx=10, pady=5)
+        
         # Price
-        price_label = CTkLabel(details_frame, text="Price", font=("Helvetica", 10), text_color="#909090")
+        price_label = CTkLabel(price_weight_frame, text="Price ($)", font=("Helvetica", 10), text_color="#909090")
         price_label.pack(side="left", padx=(0, 5))
-        price_entry = CTkEntry(details_frame, placeholder_text="49.95", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=80, height=30)
+        price_entry = CTkEntry(price_weight_frame, placeholder_text="49.95", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=100, height=30)
         if variant_data["price"]:
             price_entry.insert(0, variant_data["price"])
         price_entry.pack(side="left", padx=(0, 10))
         price_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "price", price_entry.get()))
         
-        # Remove button
-        remove_btn = CTkButton(details_frame, text="Remove", width=70, height=30, fg_color="#5a1a1a", hover_color="#7a2a2a", text_color="#ffffff", command=lambda idx=variant_idx: remove_variant(idx))
-        remove_btn.pack(side="left")
+        # Weight (kg)
+        weight_label = CTkLabel(price_weight_frame, text="Weight (kg)", font=("Helvetica", 10), text_color="#909090")
+        weight_label.pack(side="left", padx=(0, 5))
+        weight_entry = CTkEntry(price_weight_frame, placeholder_text="0.91", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=100, height=30)
+        if variant_data["product_weight"]:
+            weight_entry.insert(0, variant_data["product_weight"])
+        weight_entry.pack(side="left", padx=(0, 10))
+        weight_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "product_weight", weight_entry.get()))
+        
+        # Inventory row
+        inventory_frame = CTkFrame(variant_frame, fg_color="transparent")
+        inventory_frame.pack(fill="x", padx=10, pady=(5, 5))
+        
+        # City inventory
+        city_inv_label = CTkLabel(inventory_frame, text="City Inv.", font=("Helvetica", 10), text_color="#909090")
+        city_inv_label.pack(side="left", padx=(0, 5))
+        city_inv_entry = CTkEntry(inventory_frame, placeholder_text="100", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=80, height=30)
+        if variant_data["inventory_city"]:
+            city_inv_entry.insert(0, variant_data["inventory_city"])
+        city_inv_entry.pack(side="left", padx=(0, 10))
+        city_inv_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "inventory_city", city_inv_entry.get()))
+        
+        # South Melbourne inventory
+        south_inv_label = CTkLabel(inventory_frame, text="South Melb. Inv.", font=("Helvetica", 10), text_color="#909090")
+        south_inv_label.pack(side="left", padx=(0, 5))
+        south_inv_entry = CTkEntry(inventory_frame, placeholder_text="100", fg_color="#0F0F0F", border_color="#4a6b5a", text_color="#e0e0e0", width=80, height=30)
+        if variant_data["inventory_south_melbourne"]:
+            south_inv_entry.insert(0, variant_data["inventory_south_melbourne"])
+        south_inv_entry.pack(side="left", padx=(0, 10))
+        south_inv_entry.bind("<KeyRelease>", lambda e, idx=variant_idx: update_variant_field(idx, "inventory_south_melbourne", south_inv_entry.get()))
         
         # Store variant widgets
         variant_widgets = {
             "frame": variant_frame,
             "sku": sku_entry,
             "barcode": barcode_entry,
-            "price": price_entry
+            "price": price_entry,
+            "weight": weight_entry,
+            "city_inv": city_inv_entry,
+            "south_inv": south_inv_entry
         }
         form_widgets["variant_frames"].append(variant_widgets)
     
@@ -847,7 +1235,12 @@ def show_frame(page_to_show):
 page_one = page_1(app)  # Returns tuple: (left_frame, right_frame)
 page_two = page_2(app)  # Returns single frame
 
-# Show page 1 initially
-show_frame(page_two)
+# Show page 1 (login) if user hasn't logged in today, otherwise page 2
+if needs_login:
+    show_frame(page_one)
+    print("🔒 Daily login required")
+else:
+    show_frame(page_two)
+    print("✅ Already logged in today - skipping login page")
 
 app.mainloop()

@@ -18,10 +18,6 @@ if parent_dir not in sys.path:
 
 from agents.infrastructure.vector_database.response_schema import DbResponse
 
-load_dotenv()
-api_url = os.getenv("QDRANT_URL")
-api_key = os.getenv("QDRANT_API_KEY")
-
 # Setup structlog (simplified setup for key-value output)
 structlog.configure(
     processors=[
@@ -42,7 +38,7 @@ class VectorDb(Protocol):
         ...
 
 class vector_database:
-    def __init__(self):
+    def __init__(self, api_url: str, api_key: str):
         self.client = QdrantClient(
             url=api_url, 
             api_key=api_key,

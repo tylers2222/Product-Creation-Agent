@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-from operator import inv
 import traceback
 from pydantic import BaseModel
 import shopify
@@ -10,16 +9,13 @@ import os
 import requests
 from typing import Literal, Protocol
 from .product_schema import DraftProduct, DraftResponse
-from .schema import Inventory
+from .schema import Inventory, Inputs
 from .exceptions import ShopifyError
-
 # Add parent directory to Python path so we can import utils
 import sys
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
-
-from utils.timer import timer_func
 
 load_dotenv()
 
@@ -32,7 +28,7 @@ logging.basicConfig(
     
 class Shop(Protocol):
     """An interface with e-commerce methods """
-    def make_a_product_draft(self, shop_name: str, product_listing: DraftProduct) -> DraftResponse:
+    def make_a_product_draft(self, product_listing: DraftProduct) -> DraftResponse:
         ...
 
     def get_products_from_store(self):
@@ -67,6 +63,7 @@ class ShopifyClient:
         self.shop_name = shop_name
         self.graph_url = f"https://{shop_url}/admin/api/2024-01/graphql.json"
         self.locations = locations.create_map()
+        self.location_list = locations.locations
         session = shopify.Session(
             shop_url=f"{shop_name}/myshopify.com",
             version="2024-10",
@@ -90,6 +87,7 @@ class ShopifyClient:
         product.tags = product_listing.tags
         product.status = "draft"
 
+        # pydantic model need to serialise it explicitly
         options = product_listing.options
         product.options = options
 
@@ -97,13 +95,13 @@ class ShopifyClient:
         for variant_listing in product_listing.variants:
             variant = shopify.Variant()
 
-            variant.option1 = variant_listing.option1_value
+            variant.option1 = variant_listing.option1_value.option_value
 
             if len(options) > 1 and variant_listing.option2_value:
-                variant.option2 = variant_listing.option2_value
+                variant.option2 = variant_listing.option2_value.option_value
             
             if len(options) > 2 and variant_listing.option3_value:
-                variant.option3 = variant_listing.option3_value
+                variant.option3 = variant_listing.option3_value.option_value
             
             variant.price = str(variant_listing.price)
             variant.sku = variant_listing.sku
@@ -114,30 +112,114 @@ class ShopifyClient:
             
             variant.weight = variant_listing.product_weight
             variant.weight_unit = "kg"
+
+            variant.inventory_management = "shopify"
             
             variants.append(variant)
         
         product.variants = variants
-
         success = product.save()
         if not success:
             logging.error(f"Failed to create {product_listing.title}: {product.errors.full_messages()}")
             # print(f"\n\nDir on errors method: {dir(product.errors)}")
             raise ShopifyError("Failed to save draft product")
 
+        product.reload()
+
+        # have to wait until its saved in the database
+        # it generates an inventory item id when saved not when local
+        idxs = []
+        for idx, variant in enumerate(product.variants):
+            varaiants_inventory_wanted = product_listing.variants[idx].inventory_at_stores
+            if varaiants_inventory_wanted is None:
+                continue
+            # may have to design the inventory model to be able to be None on the stores in case of more stores added
+            inventory_model = Inventory(
+                inventory_item_id = str(variant.inventory_item_id),
+
+                stores = [
+                    Inputs(
+                        name_of_store="City",
+                        inventory_number=varaiants_inventory_wanted.city
+                    ),
+                    Inputs(
+                        name_of_store="South Melbourne",
+                        inventory_number=varaiants_inventory_wanted.south_melbourne
+                    )
+                ]
+            )
+            idxs.append(inventory_model)
+
         idx = product.id
         return DraftResponse(
             title = product_listing.title,
             id = str(idx),
+            variant_inventory_item_ids=idxs,
             url = f"https://admin.shopify.com/store/{self.shop_name}/products/{idx}",
             time_of_comepletion = datetime.datetime.now(),
             status_code = 200,
         )
 
+    def make_available_at_all_locations(self, inventory_item_id: str):
+        """Function to make a product available at every store"""
+
+        mutation = """
+mutation InventoryActivateAtLocation($inventoryItemId: ID!, $locationId: ID!) {
+  inventoryActivate(
+    inventoryItemId: $inventoryItemId
+    locationId: $locationId
+  ) {
+    inventoryLevel {
+      id
+      location {
+        id
+        name
+      }
+      item {
+        id
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+        """
+
+        inventory_item_id = f"gid://shopify/InventoryItem/{inventory_item_id}" if "gid://shopify/InventoryItem/" not in inventory_item_id else inventory_item_id
+
+        headers = {
+            "X-Shopify-Access-Token": self.access_token,
+            "Content-Type": "application/json"
+        }
+
+        for location in self.location_list:
+            variables = {
+                "inventoryItemId": inventory_item_id,
+                "locationId": location.id,
+            }
+
+            response = requests.post(url=self.graph_url, headers=headers, json={"query": mutation, "variables": variables})
+            if response.status_code != 200:
+                logging.error("incorrect status code %s", response.status_code)
+                return False
+
+            response_dict = response.json()
+            errors = response_dict.get("errors", None)
+            if errors:
+                logging.error("Errors: %s", errors)
+                return False
+
+            print(f"Response: {response.json()}")
+
+        logging.info("Complete item assignment %s to all stores", inventory_item_id)
+        return True
+
     def fill_inventory(self, inventory_data: Inventory) -> bool:
         """Hitting the inventory api"""
         logging.info("Starting inventory service for request - product_id: %s, stores_changing: %s", 
-                     inventory_data.product_id, 
+                     inventory_data.inventory_item_id, 
                      [stores.name_of_store for stores in inventory_data.stores])
 
         # Mutation to adjust inventory
@@ -163,21 +245,27 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
             "X-Shopify-Access-Token": self.access_token,
             "Content-Type": "application/json"
         }
+
+        made_available_at_all = self.make_available_at_all_locations(inventory_item_id=inventory_data.inventory_item_id)
+        if not made_available_at_all:
+            return
         
         for inventory in inventory_data.stores:
-            # Get the actual location ID from the location name (self.locations is already a dict)
+            # Get the actual location ID from the location name (self.locations is already a dict
+
             location_id = self.locations.get(inventory.name_of_store)
             if not location_id:
                 raise ShopifyError(f"Location '{inventory.name_of_store}' not found in locations map")
             
             # Ensure product_id and location_id are in GID format
-            inventory_item_gid = inventory_data.product_id if inventory_data.product_id.startswith("gid://") else f"gid://shopify/InventoryItem/{inventory_data.product_id}"
+            inventory_item_gid = inventory_data.inventory_item_id if inventory_data.inventory_item_id.startswith("gid://") else f"gid://shopify/InventoryItem/{inventory_data.inventory_item_id}"
             location_gid = location_id if location_id.startswith("gid://") else f"gid://shopify/Location/{location_id}"
             
             variables = {
                 "input": {
-                    "reason": "Correction",
-                    "name": "Stock Update",
+                    "reason": "received",
+                    "name": "available",
+                    "ignoreCompareQuantity": True,
                     "quantities": [
                         {
                             "inventoryItemId": inventory_item_gid,
@@ -195,7 +283,7 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
 
             #print(dir(response))
             #print(f"\n\nResponse Content: {response.content}\n\n")
-            response_dict = response.json()  # Parse JSON response to dict
+            response_dict = response.json() 
             
             # Check for GraphQL errors
             errors = response_dict.get("errors", None)  
@@ -238,3 +326,8 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
             logging.error(f"failed to get shopify products: {e}")
             print(traceback.format_exc())
             return None
+
+    def what_methods_does_a_variant_have(self):
+        """Non protocol function to test logic of the ecommerce api"""
+        variant = shopify.Variant.find(id_=42685314990177)
+        print(variant.inventory_item_id)

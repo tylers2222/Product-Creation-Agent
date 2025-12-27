@@ -19,27 +19,25 @@ if project_root not in sys.path:
 load_dotenv()
 
 from agents.infrastructure.shopify_api.client import ShopifyClient, Shop, Locations, Location
-from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, DraftProduct
+from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, DraftProduct, InventoryAtStores, Option
 from agents.infrastructure.shopify_api.exceptions import ShopifyError
 from agents.infrastructure.shopify_api.schema import Inventory, Inputs
-
-
 
 load_dotenv()
 
 dummy_variant = Variant(
-    option1_value="500g",
+    option1_value=Option(option_name="Size", option_value="500g"),
     sku=235053,
     barcode=9233952523,
     price=29.99,
     compare_at=39.99,
-    product_weight=0.5
+    product_weight=0.5,
+    inventory_at_stores=InventoryAtStores(city=10, south_melbourne=20)
 )
 
 dummy_draft_product = DraftProduct(
     title="Test Product Title",
     description="This is a test product description for dummy data",
-    inventory=[10, 20],
     type="Supplement",
     vendor="Test Vendor",
     tags=["test", "dummy", "sample"],
@@ -54,59 +52,63 @@ real_example_parsed = DraftProduct(
     type="Whey Blend Protein Powder",
     tags=["Sports Nutrition", "Whey Blends"],
     description="<h2>Product Overview</h2><p><strong>The World's #1 Whey Protein Powder.</strong> GOLD STANDARD 100% WHEY™ Protein powder supports muscle and post-workout recovery with 24g of quality protein and 5.5g of naturally occurring BCAAs per serving. It's crafted to be a complete, fast-digesting protein with whey protein isolate as the primary source – a filtered form of whey that can support protein goals for people at every level of fitness – from daily runners and gym-goers to competitive strength athletes and everyone in between.</p><p>With more than 15 great-tasting flavor options, satisfying texture, and easy mixing with only a glass and spoon, you'll always look forward to getting the protein you want in your active, performance-driven lifestyle. It's everything you've come to expect from OPTIMUM NUTRITION®: The World's #1 Sports Nutrition Brand.</p><h2>Benefits</h2><ul><li>24g of protein per serving to help build and maintain muscle</li><li>5.5g of naturally occurring BCAAs per serving</li><li>Gluten free</li><li>Banned Substance Tested</li><li>Easy mixing with only a glass and spoon</li><li>15+ great-tasting flavors</li></ul><h2>Suggested Use</h2><p>Mix about one scoop of the powder into 6 to 8 fluid ounces of cold water, milk, or other beverage. Stir, shake, or blend until dissolved. For best results, mix up your shake 30 to 60 minutes after your workout or use as an anytime snack in your balanced diet.</p><p>For healthy adults, consume enough protein to meet your daily protein requirements with a combination of high protein foods and protein supplements throughout the day as part of a balanced diet and exercise program.</p>",
-    inventory=[1000, 1000],
     lead_option="Size",
     baby_options=["Flavor"],
     variants=[
         Variant(
-            option1_value="2 lb",
-            option2_value="Chocolate",
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavor", option_value="Chocolate"),
             option3_value=None,
             sku=922001,
             barcode=810095637971,
             price=49.95,
             product_weight=2.0,
-            compare_at=None
+            compare_at=None,
+            inventory_at_stores=InventoryAtStores(city=1000, south_melbourne=1000)
         ),
         Variant(
-            option1_value="2 lb",
-            option2_value="Vanilla",
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavor", option_value="Vanilla"),
             option3_value=None,
             sku=922002,
             barcode=810095637972,
             price=49.95,
             product_weight=2.0,
-            compare_at=None
+            compare_at=None,
+            inventory_at_stores=InventoryAtStores(city=1000, south_melbourne=1000)
         ),
         Variant(
-            option1_value="2 lb",
-            option2_value="Strawberry",
+            option1_value=Option(option_name="Size", option_value="2 lb"),
+            option2_value=Option(option_name="Flavor", option_value="Strawberry"),
             option3_value=None,
             sku=922005,
             barcode=810095637975,
             price=49.95,
             product_weight=2.0,
-            compare_at=None
+            compare_at=None,
+            inventory_at_stores=InventoryAtStores(city=1000, south_melbourne=1000)
         ),
         Variant(
-            option1_value="5 lb",
-            option2_value="Chocolate",
+            option1_value=Option(option_name="Size", option_value="5 lb"),
+            option2_value=Option(option_name="Flavor", option_value="Chocolate"),
             option3_value=None,
             sku=922003,
             barcode=810095637973,
             price=89.95,
             product_weight=5.0,
-            compare_at=None
+            compare_at=None,
+            inventory_at_stores=InventoryAtStores(city=1000, south_melbourne=1000)
         ),
         Variant(
-            option1_value="5 lb",
-            option2_value="Vanilla",
+            option1_value=Option(option_name="Size", option_value="5 lb"),
+            option2_value=Option(option_name="Flavor", option_value="Vanilla"),
             option3_value=None,
             sku=922004,
             barcode=810095637974,
             price=89.95,
             product_weight=5.0,
-            compare_at=None
+            compare_at=None,
+            inventory_at_stores=InventoryAtStores(city=1000, south_melbourne=1000)
         ),
     ]
 )
@@ -121,21 +123,23 @@ class DraftProductWith1Option:
 
     def load_products_in(self) -> DraftProduct:
         dummy_variant_real = Variant(
-            option1_value="2kg",
+            option1_value=Option(option_name="Size", option_value="2kg"),
             sku=561596,
             barcode=9238957523,
             price=64.95,
             compare_at=79.95,
-            product_weight=1.0
+            product_weight=1.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         dummy_variant_real_2 = Variant(
-            option1_value="1kg",
+            option1_value=Option(option_name="Size", option_value="1kg"),
             sku=561597,
             barcode=9233952523,
             price=119.95,
             compare_at=149.95,
-            product_weight=2.0
+            product_weight=2.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         return DraftProduct(
@@ -157,7 +161,6 @@ class DraftProductWith1Option:
         <p>Mix one rounded scoop with 180-240ml of cold water, milk, or your favorite beverage. Consume 30-60 minutes after training or between meals to meet your daily protein requirements.</p>
 
         <p><strong>Allergen Warning:</strong> Contains milk and soy ingredients. Manufactured in a facility that also processes egg, wheat, peanuts, and tree nuts.</p>""",
-            inventory=[45, 28],
             type="Sports Nutrition",
             vendor="Optimum Nutrition",
             tags=[
@@ -182,23 +185,25 @@ class DraftProductWith2Options:
 
     def load_products_in(self) -> DraftProduct:
         dummy_variant_real = Variant(
-            option1_value="1kg",
-            option2_value="Strawberry",
+            option1_value=Option(option_name="Size", option_value="1kg"),
+            option2_value=Option(option_name="Flavour", option_value="Strawberry"),
             sku=235052,
             barcode=9238957523,
             price=64.95,
             compare_at=79.95,
-            product_weight=1.0
+            product_weight=1.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         dummy_variant_real_2 = Variant(
-            option1_value="2kg",
-            option2_value="Strawberry",
+            option1_value=Option(option_name="Size", option_value="2kg"),
+            option2_value=Option(option_name="Flavour", option_value="Strawberry"),
             sku=235053,
             barcode=9233952523,
             price=119.95,
             compare_at=149.95,
-            product_weight=2.0
+            product_weight=2.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         return DraftProduct(
@@ -220,7 +225,6 @@ class DraftProductWith2Options:
         <p>Mix one rounded scoop with 180-240ml of cold water, milk, or your favorite beverage. Consume 30-60 minutes after training or between meals to meet your daily protein requirements.</p>
 
         <p><strong>Allergen Warning:</strong> Contains milk and soy ingredients. Manufactured in a facility that also processes egg, wheat, peanuts, and tree nuts.</p>""",
-            inventory=[45, 28],
             type="Sports Nutrition",
             vendor="Optimum Nutrition",
             tags=[
@@ -252,51 +256,56 @@ class DraftProductWithMultipleVariantsAndMultipleSubVariants:
 
     def load_products_in(self) -> DraftProduct:
         dummy_variant_size_1_strawberry = Variant(
-            option1_value="1kg",
-            option2_value="Strawberry",
+            option1_value=Option(option_name="Size", option_value="1kg"),
+            option2_value=Option(option_name="Flavour", option_value="Strawberry"),
             sku=random.randint(99999, 1000000),
             barcode=random.randint(999999999, 10000000000),
             price=64.95,
             compare_at=79.95,
-            product_weight=1.0
+            product_weight=1.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
         dummy_variant_size_1_chocolate = Variant(
-            option1_value="1kg",
-            option2_value="Chocolate",
+            option1_value=Option(option_name="Size", option_value="1kg"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate"),
             sku=random.randint(99999, 1000000),
             barcode=random.randint(999999999, 10000000000),
             price=64.95,
             compare_at=79.95,
-            product_weight=1.0
+            product_weight=1.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
         dummy_variant_size_1_vanilla = Variant(
-            option1_value="1kg",
-            option2_value="Vanilla",
+            option1_value=Option(option_name="Size", option_value="1kg"),
+            option2_value=Option(option_name="Flavour", option_value="Vanilla"),
             sku=random.randint(99999, 1000000),
             barcode=random.randint(999999999, 10000000000),
             price=64.95,
             compare_at=79.95,
-            product_weight=1.0
+            product_weight=1.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         dummy_variant_size_2_strawberry = Variant(
-            option1_value="2kg",
-            option2_value="Strawberry",
+            option1_value=Option(option_name="Size", option_value="2kg"),
+            option2_value=Option(option_name="Flavour", option_value="Strawberry"),
             sku=random.randint(99999, 1000000),
             barcode=random.randint(999999999, 10000000000),
             price=119.95,
             compare_at=149.95,
-            product_weight=2.0
+            product_weight=2.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         dummy_variant_size_2_chocolate = Variant(
-            option1_value="2kg",
-            option2_value="Chocolate",
+            option1_value=Option(option_name="Size", option_value="2kg"),
+            option2_value=Option(option_name="Flavour", option_value="Chocolate"),
             sku=random.randint(99999, 1000000),
             barcode=random.randint(999999999, 10000000000),
             price=119.95,
             compare_at=149.95,
-            product_weight=2.0
+            product_weight=2.0,
+            inventory_at_stores=InventoryAtStores(city=45, south_melbourne=28)
         )
 
         return DraftProduct(
@@ -318,7 +327,6 @@ class DraftProductWithMultipleVariantsAndMultipleSubVariants:
         <p>Mix one rounded scoop with 180-240ml of cold water, milk, or your favorite beverage. Consume 30-60 minutes after training or between meals to meet your daily protein requirements.</p>
 
         <p><strong>Allergen Warning:</strong> Contains milk and soy ingredients. Manufactured in a facility that also processes egg, wheat, peanuts, and tree nuts.</p>""",
-            inventory=[45, 28],
             type="Sports Nutrition",
             vendor="Optimum Nutrition",
             tags=[
@@ -345,8 +353,8 @@ class DraftProductWithMultipleVariantsAndMultipleSubVariants:
         ]
 
 mock_inventory_request = Inventory(
-    product_id= "42703206350945", #is this SKU, Barcode or Product issued id?
-    stores=[Inputs(name_of_store="City", inventory_number=1000), Inputs(name_of_store="South Melbourne", inventory_number=1000)],
+    inventory_item_id= "44793372835937", #is this SKU, Barcode or Product issued id?
+    stores=[Inputs(name_of_store="City", inventory_number=50), Inputs(name_of_store="South Melbourne", inventory_number=50)],
 )
 
 # ----------------------------------------------------------------------------------------------------------
@@ -420,8 +428,11 @@ class IntegrationTests:
         token = os.getenv("SHOPIFY_TOKEN")
         shop_name = os.getenv("SHOP_NAME")
         shop_url = os.getenv("SHOP_URL")
-        location_one_id = os.getenv("LOCATION_ONE_ID")
-        location_two_id = os.getenv("LOCATION_TWO_ID")
+        location_one_id = f"gid://shopify/Location/{os.getenv("LOCATION_ONE_ID")}"
+        location_two_id = f"gid://shopify/Location/{os.getenv("LOCATION_TWO_ID")}"
+
+        print(f"Location One: {location_one_id}")
+        print(f"Location Two: {location_two_id}")
         locations = Locations(locations=[Location(name="City", id=location_one_id), Location(name="South Melbourne", id=location_two_id)])
 
         self.client: Shop = ShopifyClient(api_key=api_key, api_secret=api_secret, token=token, shop_url=shop_url, shop_name=shop_name, locations=locations)
@@ -440,8 +451,10 @@ class IntegrationTests:
 
     def test_make_a_product_draft(self):
         try:
-            draft_response = self.client.make_a_product_draft(shop_name=self.shop_name, product_listing=self.test_2_options_data)
+            draft_response = self.client.make_a_product_draft(product_listing=self.test_2_options_data)
             assert(draft_response.status_code == 200)
+
+            print(draft_response.model_dump_json(indent=3))
 
         except Exception as e:
             print(f"Error: {e} -> \n\n {traceback.format_exc()}")
@@ -449,7 +462,7 @@ class IntegrationTests:
         
     def test_DraftProductWithMultipleVariantsAndMultipleSubVariants(self):
         try:
-            draft_response = self.client.make_a_product_draft(shop_name=self.shop_name, product_listing=self.test_max_test_data)
+            draft_response = self.client.make_a_product_draft(product_listing=self.test_max_test_data)
             assert draft_response.status_code == 200
 
         except Exception as e:
@@ -480,13 +493,21 @@ class IntegrationTests:
         print(f"Type: {type(res[3])}")
         print("="*60)
 
+    def test_what_methods_does_a_variant_have(self):
+        self.client.what_methods_does_a_variant_have()
+
+    def test_activating_a_location(self):
+        self.client.make_available_at_all_locations(inventory_item_id="44793372835937")
+
 if __name__ == "__main__":
     integration = IntegrationTests()
     #integration.test_get_products_from_store()
     #integration.test_make_a_product_draft()
     #integration.test_DraftProductWithMultipleVariantsAndMultipleSubVariants()
     #integration.test_real_instance()
-    integration.test_changing_a_products_inventory()
+    #integration.test_changing_a_products_inventory()
+    #integration.test_what_methods_does_a_variant_have()
+    # integration.test_activating_a_location()
 
     #ut = UnitTests()
     #ut.test_make_a_product_draft_success()

@@ -1,6 +1,8 @@
 import os
 import sys
 from dotenv import load_dotenv
+from typing import Optional
+from collections import namedtuple
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
@@ -10,12 +12,7 @@ os.chdir("..")
 load_dotenv()
 
 from agents.infrastructure.firecrawl_api.client import FirecrawlClient, Scraper, FireResult
-import json
-from typing import Optional
-import pytest
-from collections import namedtuple
 
-firecrawl_client = FirecrawlClient()
 query1 = "Rapid supplements cream of rice 1.2kg"
 
 # Mock object that mimics the structure of Firecrawl's scraped data with markdown attribute
@@ -149,6 +146,7 @@ class UnitTests:
 def send_to_file():
     print("="*60)
     print("STARTING INTEGRATION TEST IN SCRAPER PACKAGE\n\n")
+    firecrawl_client = FirecrawlClient(api_key=os.getenv("FIRECRAWL_API_KEY"))
 
     fire_result = firecrawl_client.scrape_and_search_site(query1)
     assert(fire_result is not None)

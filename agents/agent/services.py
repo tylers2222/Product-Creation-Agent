@@ -183,8 +183,9 @@ def search_products_comprehensive(query: str, scraper: Scraper, embeddor: Embedd
         scraper_response = executor.submit(scrape_results_svc, query, scraper, llm)
 
         embeddings = embed_search_svc(query=query, embeddings=embeddor)
-        if embeddings is not None:
-            search_response = executor.submit(similarity_search_svc, embeddings, vector_db)
+        if embeddings is None:
+            raise ValueError("embeddings cant be none")
+        search_response = executor.submit(similarity_search_svc, embeddings, vector_db)
 
         scraper_response_result = scraper_response.result()
         vector_result_result = search_response.result() if embeddings is not None else None
@@ -193,5 +194,6 @@ def search_products_comprehensive(query: str, scraper: Scraper, embeddor: Embedd
 
 def shop_svc(draft_product: DraftProduct, shop: Shop) -> DraftResponse:
     # add any business logic that pops up here later
-    base_logger.info(f"Sending Draft -> \n{draft_product.model_dump_json(indent=3)}")
-    return shop.make_a_product_draft("evelynfaye", draft_product)
+    base_logger.info("Sending Draft ->}")
+    print(draft_product.model_dump_json(indent=3))
+    return shop.make_a_product_draft(product_listing=draft_product)
