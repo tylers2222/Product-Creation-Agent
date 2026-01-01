@@ -2,7 +2,9 @@
 #-----------------------------------------------------------------------------------------------
 from pydantic import BaseModel
 from ..infrastructure.shopify_api.product_schema import Variant
+import structlog
 
+logger = structlog.get_logger(__name__)
 
 SYNTHESIS_AGENT_PROMPT = """You are a vector database search quality control agent.
 
@@ -216,6 +218,8 @@ class PromptVariant(BaseModel):
 
 
 def format_product_input(prompt_variant: PromptVariant) -> str:
+    logger.debug("Started format_product_input")
+
     """
     Helper function to format product information for web scraping and product generation
     
@@ -281,6 +285,7 @@ def format_product_input(prompt_variant: PromptVariant) -> str:
         
         lines.append(f"  {i}. {', '.join(variant_parts)}")
     
+    logger.debug("Result of input format", result=lines)
     return "\n".join(lines)
 
 #-----------------------------------------------------------------------------------------------

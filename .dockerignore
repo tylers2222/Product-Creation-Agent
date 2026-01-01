@@ -1,0 +1,16 @@
+.git/
+.gitignore
+
+.env
+
+/gui
+
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.mo
+
+**/*.md
+
+**/*.log
+**/*.json

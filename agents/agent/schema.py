@@ -1,4 +1,7 @@
 from pydantic import BaseModel, Field
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 """A response schema for an agent in the product drafting workflow"""
 class InvokeResponse(BaseModel):
@@ -18,9 +21,12 @@ class ScraperResponse(BaseModel):
     all_success:    bool
 
     def markdowns_needings_summarisation(self):
+        logger.debug("Starting markdowns_needings_summarisation")
+
         result = []
         for idx, markdown in enumerate(self.result):
             if len(markdown) > 15000:
                 result.append({"idx": idx, "markdown": markdown})
 
+        logger.debug("Length of markdowns that need summarising %s", len(result))
         return result

@@ -5,23 +5,11 @@ from typing import Optional, Dict, Any, Protocol, runtime_checkable
 from functools import wraps
 import os
 import time
-import logging
+import structlog
 from .exceptions import FirecrawlError
 from .schema import FireResult, DataResult
 
-os.chdir("..")
-load_dotenv()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
-if not firecrawl_api_key:
-    print("No Api Key")
-
+logger = structlog.get_logger(__name__)
 
 class Scraper(Protocol):
     """An interface with scraping methods"""
@@ -38,6 +26,8 @@ class FirecrawlClient:
 
     def scrape_and_search_site(self, query: str, limit: int = 5):
         """Some filtering x business logic in the concrete due to the size of response, structured response helps LLM as well"""
+        logger.debug("Starting scraper", query=query, length_of_urls=limit)
+
         if limit > 10:
             raise ValueError("Limit on pages cant be greater than 10 due to cost principle")
 
@@ -58,6 +48,7 @@ class FirecrawlClient:
             logger.info("successful search returned no url data")
             raise FirecrawlError("completed search returned no url data")
 
+        logger.info("Completed Scrape")
         return FireResult(
             data = search,
             query = query,

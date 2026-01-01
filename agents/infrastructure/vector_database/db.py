@@ -1,5 +1,6 @@
 import datetime
 import logging
+import structlog
 import traceback
 from typing import Protocol
 from numpy.core import records
@@ -10,7 +11,6 @@ from typing import Optional
 from dotenv import load_dotenv
 import os
 import sys
-import structlog
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
@@ -18,15 +18,7 @@ if parent_dir not in sys.path:
 
 from agents.infrastructure.vector_database.response_schema import DbResponse
 
-# Setup structlog (simplified setup for key-value output)
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.KeyValueRenderer(),
-    ]
-)
-base_logger = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 
 class VectorDb(Protocol):
     def upsert_points(self, collection_name: str, points: list[PointStruct]) -> DbResponse | None:
@@ -39,37 +31,47 @@ class VectorDb(Protocol):
 
 class vector_database:
     def __init__(self, api_url: str, api_key: str):
+        logger.debug("Starting to initialise vector_database")
+
         self.client = QdrantClient(
             url=api_url, 
             api_key=api_key,
             timeout=3000
         )
+        logger.info("Initialised vector_database")
 
     def get_collections(self):
         # wont be used in interface satisfaction, a concrete only impl for testing
+        logger.debug("Starting get_collections")
         return self.client.get_collection("shopify_products")
 
     def create_collection(self, collection_name: str):
+        logger.debug("Starting create_collection", collection_name=collection_name)
         try:
             created = self.client.create_collection(collection_name=collection_name)
             if not created:
-                logging.error(f"Failed to create collection {collection_name}")
+                logger.error("Failed to create collection", collection_name=collection_name)
 
         except Exception as e:
-            logging.error(f"Failed to create collection {collection_name}: {e}")
+            logger.error(f"Failed to create collection", collection_name=collection_name, error=e)
 
     def search_points(self, collection_name: str, query_vector: list[float], k: int) -> list:
         # new method, return a Query Response object
+        logger.debug("Starting search_points", collection_name=collection_name, query_vector=query_vector[:10])
         return self.client.query_points(collection_name=collection_name, query=query_vector, limit=k).points
 
     def upsert_points(self, collection_name: str, points: list[PointStruct]) -> DbResponse | None:
+        logger.debug("Starting upsert_points", collection_name=collection_name, length_of_upsert=len(points))
         try:
             update_result = self.client.upsert(
                 collection_name = collection_name,
                 points = points,
             )
 
+            logger.debug("Vector Upsert Result", update_result=update_result.model_dump_json())
+
             if update_result.status == "completed":
+                logger.info("Completed Upsert Into Vector Db", collection_name=collection_name)
                 return DbResponse(
                     records_inserted=len(points),
                     collection_name=collection_name,
@@ -78,7 +80,7 @@ class vector_database:
                     traceback=None
                 )
             else:
-                logging.error(f"Upsert failed with status: {update_result.status}")
+                logger.error(f"Upsert failed with status: {update_result.status}")
                 return DbResponse(
                     records_inserted=0,
                     collection_name=collection_name,
@@ -86,6 +88,7 @@ class vector_database:
                     error=f"Upsert status: {update_result.status}",
                     traceback=None
                 )
+        
 
         except Exception as e:
             return DbResponse(

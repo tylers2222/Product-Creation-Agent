@@ -8,20 +8,12 @@ from agents.infrastructure.shopify_api.client import ShopifyClient, DraftProduct
 from agents.infrastructure.vector_database.db import VectorDb, vector_database
 from agents.infrastructure.vector_database.embeddings import Embeddings, Embeddor
 from config import ServiceContainer
-from .services import embed_search_svc, similarity_search_svc, search_products_comprehensive
+from .services import embed_search_svc, similarity_search_svc
 
-
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.KeyValueRenderer(),
-    ]
-)
-# Get the base logger
-base_logger = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 
 def create_all_tools(container: ServiceContainer) -> list:
+    logger.debug("Creating all the tools for agent use")
     @tool
     def get_similar_products(query: str):
         """
@@ -41,8 +33,10 @@ def create_all_tools(container: ServiceContainer) -> list:
             return "Failed to fetched embedded query from database"
 
         result = [products.payload for products in similar_products if products.payload]
+        logger.debug("Result of similar product payloads for agent", result=result)
         return result
 
+    logger.info("Created All Tools")
     return [get_similar_products]
 
 #-------------------------------------------------------------------------------------------------

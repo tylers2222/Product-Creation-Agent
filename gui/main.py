@@ -8,31 +8,81 @@ import time
 import json
 from datetime import datetime, date
 import hashlib
+from dotenv import load_dotenv
+import logging
 
-# Add parent directory to path to import agent modules
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Import local models (standalone GUI - no backend dependencies)
+from models import PromptVariant, Variant, Option, InventoryAtStores, format_product_input
 
-from api.models.product_generation import PromptVariant
-from agents.infrastructure.shopify_api.product_schema import Variant, Option, InventoryAtStores
-from agents.agent.prompts import format_product_input
+load_dotenv()
+
+# ========================================
+# LOGGING CONFIGURATION
+# ========================================
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# PyInstaller resource path helper
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # ========================================
 # API CONFIGURATION
 # ========================================
-# Change this URL for ngrok or production
-API_BASE_URL = "https://27cccf53b1df.ngrok-free.app"  # Change to your ngrok URL when needed
-# API_BASE_URL = "https://your-ngrok-url.ngrok.io"
+# Reads from config.json if exists, otherwise uses default
+CONFIG_FILE = resource_path("config.json")
+
+def load_api_url():
+    """Load API URL from config file or environment variable"""
+    logger.debug(f"Loading API URL from config file: {CONFIG_FILE}")
+    
+    # 2. Try config.json (for distribution)
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                api_url = config.get("api_url", None)
+                logger.debug(f"Loaded API URL from config: {api_url}")
+                return api_url
+        except Exception as e:
+            logger.error(f"Failed to load config.json: {e}")
+            pass
+
+    logger.warning("No API URL configured, returning None")
+    return None
+
+
+API_BASE_URL = load_api_url()
+logger.info(f"API Base URL: {API_BASE_URL}")
 
 # ========================================
 # AUTHENTICATION CONFIGURATION
 # ========================================
 # Set your password here
-CORRECT_PASSWORD = "123456"
+CORRECT_PASSWORD = "999999"
 
-# File to track daily logins
-LOGIN_TRACKING_FILE = "login_tracking.json"
+# File to track daily logins (in same directory as this script)
+# For PyInstaller, we need to save to a writable location
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable - use user's home directory
+    SCRIPT_DIR = os.path.expanduser("~/.evelyn_faye_agent")
+    os.makedirs(SCRIPT_DIR, exist_ok=True)
+else:
+    # Running as normal Python script
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGIN_TRACKING_FILE = os.path.join(SCRIPT_DIR, "login_tracking.json")
 
 def get_device_id():
     """Get a unique identifier for this device"""
@@ -98,6 +148,7 @@ def record_login():
     print(f"   Total logins: {device_data['total_logins']}")
     print(f"   Unique days: {len(device_data['login_dates'])}")
 
+# Initialize the app
 app = CTk()
 app.geometry("1500x980")
 
@@ -118,7 +169,7 @@ def page_1(parent):
     left_frame.grid(row=0, column=0, sticky="nsew", padx=(10,5), pady=(10,10))
 
     # Load the original image
-    original_image = Image.open("images/login_image.png")
+    original_image = Image.open(resource_path("images/login_image.png"))
 
     # Create initial CTkImage
     login_image = CTkImage(
@@ -523,6 +574,9 @@ def page_2(parent):
     
     def build_request_payload():
         """Build the JSON payload from form_data"""
+        logger.debug("Building request payload from form_data")
+        logger.debug(f"Form data: {json.dumps(form_data, indent=2, default=str)}")
+        
         try:
             # Build variants list
             variants_list = []
@@ -595,7 +649,10 @@ def page_2(parent):
                     product_weight=weight_val,
                     inventory_at_stores=inventory_at_stores
                 )
+                logger.debug(f"Created variant: {variant.model_dump()}")
                 variants_list.append(variant)
+            
+            logger.debug(f"Total variants created: {len(variants_list)}")
             
             # Create PromptVariant object
             prompt_variant = PromptVariant(
@@ -604,84 +661,204 @@ def page_2(parent):
                 variants=variants_list
             )
             
-            return prompt_variant.model_dump()
+            payload = prompt_variant.model_dump()
+            logger.debug(f"Final payload: {json.dumps(payload, indent=2, default=str)}")
+            return payload
         except Exception as e:
+            logger.error(f"Error building payload: {str(e)}", exc_info=True)
             update_status(f"Error building payload: {str(e)}", "#ff4444")
             return None
     
+    def show_success_popup(product_url):
+        """Show a popup with the Shopify product URL"""
+        import webbrowser
+        from tkinter import Toplevel
+        
+        # Create popup window
+        popup = Toplevel(app)
+        popup.title("✅ Product Created Successfully!")
+        popup.geometry("600x250")
+        popup.configure(bg="#1a1a1a")
+        
+        # Center the popup
+        popup.update_idletasks()
+        x = (popup.winfo_screenwidth() // 2) - (600 // 2)
+        y = (popup.winfo_screenheight() // 2) - (250 // 2)
+        popup.geometry(f"600x250+{x}+{y}")
+        
+        # Make it stay on top
+        popup.attributes('-topmost', True)
+        
+        # Success icon and message
+        success_label = CTkLabel(
+            popup, 
+            text="🎉 Product Created Successfully!",
+            font=("Helvetica", 20, "bold"),
+            text_color="#44ff44"
+        )
+        success_label.pack(pady=(30, 20))
+        
+        # URL label
+        url_label = CTkLabel(
+            popup,
+            text="Your product is now live on Shopify:",
+            font=("Helvetica", 12),
+            text_color="#e0e0e0"
+        )
+        url_label.pack(pady=(0, 10))
+        
+        # URL text box (read-only, but selectable)
+        url_textbox = CTkTextbox(
+            popup,
+            height=40,
+            width=550,
+            fg_color="#0F0F0F",
+            border_color="#4a6b5a",
+            border_width=2,
+            text_color="#4a9eff",
+            font=("Helvetica", 11)
+        )
+        url_textbox.pack(pady=(0, 20))
+        url_textbox.insert("1.0", product_url)
+        url_textbox.configure(state="disabled")  # Make read-only
+        
+        # Buttons frame
+        buttons_frame = CTkFrame(popup, fg_color="transparent")
+        buttons_frame.pack(pady=(0, 20))
+        
+        # Open URL button
+        def open_url():
+            webbrowser.open(product_url)
+            popup.destroy()
+        
+        open_btn = CTkButton(
+            buttons_frame,
+            text="🔗 Open in Browser",
+            width=180,
+            height=40,
+            fg_color="#4a6b5a",
+            hover_color="#5c7d6c",
+            text_color="#ffffff",
+            font=("Helvetica", 13, "bold"),
+            command=open_url
+        )
+        open_btn.pack(side="left", padx=10)
+        
+        # Close button
+        close_btn = CTkButton(
+            buttons_frame,
+            text="Close",
+            width=120,
+            height=40,
+            fg_color="#555555",
+            hover_color="#666666",
+            text_color="#ffffff",
+            font=("Helvetica", 13),
+            command=popup.destroy
+        )
+        close_btn.pack(side="left", padx=10)
+    
     def poll_status(request_id):
         """Poll the job status endpoint every 20 seconds"""
+        logger.info(f"Starting polling for request_id: {request_id}")
         poll_url = f"{API_BASE_URL}/internal/product_generation/{request_id}"
-        timeout_seconds = 180  # 3 minutes
+        logger.debug(f"Poll URL: {poll_url}")
+        timeout_seconds = 600  # 10 minutes
         start_time = time.time()
         
         while True:
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
-                app.after(0, lambda: update_status("⏱️ Request timed out after 3 minutes", "#ff9944"))
+                logger.warning(f"Polling timed out after {timeout_seconds}s for request_id: {request_id}")
+                app.after(0, lambda: update_status("⏱️ Request timed out after 10 minutes", "#ff9944"))
                 app.after(0, lambda: send_request_btn.configure(state="normal"))
                 break
             
             try:
-                # Increased timeout to 60 seconds for polling requests
+                logger.debug(f"Polling status (elapsed: {int(elapsed)}s)...")
+                # Increased timeout to 250 seconds for polling requests
                 response = requests.get(poll_url, timeout=250)
+                logger.debug(f"Poll response status: {response.status_code}")
+                
                 if response.status_code == 200:
                     # Parse outer response
                     outer_response = response.json()
+                    logger.debug(f"Poll response data: {outer_response}")
                     
                     # The "data" field contains a JSON string, so parse it again
                     if "data" in outer_response:
                         job_data = json.loads(outer_response["data"])
+                        logger.debug(f"Job data: {job_data}")
                     else:
                         job_data = outer_response  # Fallback
+                        logger.debug("No 'data' field, using outer_response as job_data")
                     
                     if job_data.get("completed"):
+                        product_url = job_data.get("url_of_job", "")
+                        logger.info(f"Job completed! Product URL: {product_url}")
                         app.after(0, lambda: update_status("✅ Product created successfully!", "#44ff44"))
                         app.after(0, lambda: send_request_btn.configure(state="normal"))
+                        app.after(0, lambda url=product_url: show_success_popup(url))
                         break
                     else:
                         # Still processing
+                        logger.debug(f"Job still processing (elapsed: {int(elapsed)}s)")
                         app.after(0, lambda: update_status(f"⏳ Processing... ({int(elapsed)}s)", "#a8d5ba"))
                 else:
+                    logger.error(f"Error polling status: {response.status_code}")
+                    logger.debug(f"Poll error response: {response.text}")
                     app.after(0, lambda s=response.status_code: update_status(f"❌ Error polling status: {s}", "#ff4444"))
                     app.after(0, lambda: send_request_btn.configure(state="normal"))
                     break
             except requests.exceptions.Timeout:
                 # Timeout on this poll - continue to next poll attempt
+                logger.warning(f"Poll request timed out (elapsed: {int(elapsed)}s), retrying...")
                 app.after(0, lambda: update_status(f"⏳ Still processing... ({int(elapsed)}s, retrying)", "#a8d5ba"))
             except Exception as e:
+                logger.error(f"Polling error: {type(e).__name__}: {str(e)}", exc_info=True)
                 app.after(0, lambda e=e: update_status(f"❌ Polling error: {str(e)}", "#ff4444"))
                 app.after(0, lambda: send_request_btn.configure(state="normal"))
                 break
             
+            logger.debug("Waiting 20 seconds before next poll...")
             time.sleep(20)  # Wait 20 seconds before next poll
     
     def send_request():
         """Send POST request to create product"""
+        logger.debug("send_request() called")
+        
         # Validate form data
         if not form_data.get("brand_name") or not form_data.get("product_name"):
+            logger.warning("Missing brand or product name")
             update_status("⚠️ Please fill in brand and product name", "#ff9944")
             return
         
         if not form_data.get("variants") or len(form_data.get("variants", [])) == 0:
+            logger.warning("No variants provided")
             update_status("⚠️ Please add at least one variant", "#ff9944")
             return
         
         # Validate each variant has SKU, barcode, and price filled
         for idx, variant in enumerate(form_data.get("variants", [])):
             if not variant.get("sku") or not str(variant.get("sku")).strip():
+                logger.warning(f"Variant {idx + 1} missing SKU")
                 update_status(f"⚠️ Variant {idx + 1} is missing SKU", "#ff9944")
                 return
             if not variant.get("barcode") or not str(variant.get("barcode")).strip():
+                logger.warning(f"Variant {idx + 1} missing barcode")
                 update_status(f"⚠️ Variant {idx + 1} is missing barcode", "#ff9944")
                 return
             if not variant.get("price") or not str(variant.get("price")).strip():
+                logger.warning(f"Variant {idx + 1} missing price")
                 update_status(f"⚠️ Variant {idx + 1} is missing price", "#ff9944")
                 return
+        
+        logger.info("Validation passed, building payload")
         
         # Build payload
         payload = build_request_payload()
         if not payload:
+            logger.error("Failed to build payload")
             return  # Error message already shown by build_request_payload
         
         # Disable button during request
@@ -691,28 +868,53 @@ def page_2(parent):
         def make_request():
             try:
                 url = f"{API_BASE_URL}/internal/product_generation"
+                logger.info(f"Sending POST request to: {url}")
+                logger.debug(f"Request payload: {json.dumps(payload, indent=2, default=str)}")
+                
                 response = requests.post(url, json=payload, timeout=30)
                 
+                logger.info(f"Response status code: {response.status_code}")
+                logger.debug(f"Response headers: {dict(response.headers)}")
+                
                 if response.status_code == 200:
+                    logger.info("Request successful (200 OK)")
                     response_data = response.json()
+                    logger.debug(f"Response data: {response_data}")
                     request_id = response_data.get("request_id")
                     
                     if request_id:
+                        logger.info(f"Received request_id: {request_id}")
                         app.after(0, lambda: update_status(f"✅ Request submitted! ID: {request_id[:8]}...", "#44ff44"))
                         # Start polling in background thread
                         poll_thread = threading.Thread(target=poll_status, args=(request_id,), daemon=True)
                         poll_thread.start()
                     else:
+                        logger.error("No request_id in response")
                         app.after(0, lambda: update_status("❌ No request_id in response", "#ff4444"))
                         app.after(0, lambda: send_request_btn.configure(state="normal"))
                 else:
+                    logger.error(f"Request failed with status {response.status_code}")
+                    # Print full error response
+                    try:
+                        error_text = response.text
+                        logger.error(f"Error response text: {error_text}")
+                        try:
+                            error_json = response.json()
+                            logger.error(f"Error response JSON: {json.dumps(error_json, indent=2)}")
+                        except:
+                            logger.debug("Could not parse error response as JSON")
+                    except Exception as parse_err:
+                        logger.error(f"Could not read error response: {parse_err}")
+                    
                     app.after(0, lambda: update_status(f"❌ Request failed: {response.status_code}", "#ff4444"))
                     app.after(0, lambda: send_request_btn.configure(state="normal"))
             except Exception as e:
+                logger.error(f"Exception during request: {type(e).__name__}: {str(e)}", exc_info=True)
                 app.after(0, lambda e=e: update_status(f"❌ Error: {str(e)}", "#ff4444"))
                 app.after(0, lambda: send_request_btn.configure(state="normal"))
         
         # Run request in background thread to avoid freezing GUI
+        logger.debug("Starting request thread")
         request_thread = threading.Thread(target=make_request, daemon=True)
         request_thread.start()
 
@@ -1235,12 +1437,17 @@ def show_frame(page_to_show):
 page_one = page_1(app)  # Returns tuple: (left_frame, right_frame)
 page_two = page_2(app)  # Returns single frame
 
-# Show page 1 (login) if user hasn't logged in today, otherwise page 2
-if needs_login:
-    show_frame(page_one)
-    print("🔒 Daily login required")
-else:
-    show_frame(page_two)
-    print("✅ Already logged in today - skipping login page")
+def main():
+    """Main entry point for the GUI application"""
+    # Show page 1 (login) if user hasn't logged in today, otherwise page 2
+    if needs_login:
+        show_frame(page_one)
+        print("🔒 Daily login required")
+    else:
+        show_frame(page_two)
+        print("✅ Already logged in today - skipping login page")
+    
+    app.mainloop()
 
-app.mainloop()
+if __name__ == "__main__":
+    main()

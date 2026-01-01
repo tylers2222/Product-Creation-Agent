@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import traceback
+import uuid
 
 from dotenv import load_dotenv
 
@@ -64,6 +65,8 @@ pv = PromptVariant(
     variants=variants
 )
 
+request_id = uuid.UUID()
+
 class unittest:
     def __init__(self) -> None:
         self.scraper = MockScraperClient()
@@ -89,7 +92,7 @@ class unittest:
             )
 
             format_product_input(prompt_variant=pv)
-            s.service_workflow(query="Hi")
+            s.service_workflow(query="Hi", request_id=str(request_id))
 
         except Exception as e:
             print(f"Error: {e}")
@@ -106,7 +109,7 @@ class integrationtests:
     async def test_shopify_workflow(self):
         try:
             query = format_product_input(prompt_variant=pv)
-            await self.workflow.service_workflow(query=query)
+            await self.workflow.service_workflow(query=query, request_id=str(request_id))
 
         except Exception as e:
             print(f"Error: {e} -> Traceback: \n{traceback.format_exc()}")

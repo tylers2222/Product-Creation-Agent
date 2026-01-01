@@ -1,9 +1,9 @@
-from langgraph.graph import START, StateGraph, END
 from typing import Protocol, TypedDict
-import structlog
 import json
 from pydantic import BaseModel
+import structlog
 
+from langgraph.graph import START, StateGraph, END
 from qdrant_client.models import PointStruct
 from agents.infrastructure.shopify_api.product_schema import DraftProduct, DraftResponse
 from .schema import ScraperResponse
@@ -17,26 +17,12 @@ from agents.infrastructure.shopify_api.client import ShopifyClient
 from .agent_definitions import synthesis_agent
 from .services import search_products_comprehensive, shop_svc
 from langchain_core.output_parsers import PydanticOutputParser
-from .llm import LLM, llm_client
+from .llm import llm_client, LLM
 from .prompts import markdown_summariser_prompt
 from .tools import create_all_tools
 from config import create_service_container, ServiceContainer
 
-# Configure structlog for scoped logging
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.KeyValueRenderer(),
-    ],
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-    cache_logger_on_first_use=True,
-)
-
-# Get the base logger
-logger = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 
 class AgentProtocol(Protocol):
     """Protocol for abstracting the agent workflow"""
@@ -45,6 +31,7 @@ class AgentProtocol(Protocol):
 
 class AgentState(TypedDict):
     """State of agent operations"""
+    request_id: str
     query: str # the original query the user writes
     extract_query: str # the extracted query from hte LLM
     validated_data: dict # dictionary representation of the product and its internal data
@@ -75,6 +62,8 @@ class VectorRelevanceResponse(BaseModel):
 # Main LLM Client Class
 class ShopifyProductWorkflow:
     def __init__(self, shop: Shop, scraper: Scraper, vector_db: VectorDb, embeddor: Embeddor, llm: LLM, tools: list):
+        logger.debug("Inititalising ShopifyProductWorkflow class")
+
         self.llm = llm
         self.workflow = StateGraph(AgentState)
         self.shop = shop
@@ -98,10 +87,12 @@ class ShopifyProductWorkflow:
         self.workflow.add_edge("post_shopify", "inventory_filled")
         self.workflow.add_edge("inventory_filled", END)
 
-        logger.info("Successfully completed workflow")
         self.app = self.workflow.compile()
+        logger.info("Successfully initialised ShopifyProductWorkflow class")
 
     def query_extract(self, state: AgentState):
+        request_id = state.get("request_id", None)
+        logger.debug("Starting query_extract node for request %s", request_id)
         parser = PydanticOutputParser(pydantic_object=QueryResponse)
         format_instructions = parser.get_format_instructions()
         
@@ -179,11 +170,10 @@ Output validated_data:
 {format_instructions}
 """
         llm_response = self.llm.invoke_mini(system_query = None, user_query=prompt)
-
         query_response = parser.parse(llm_response)
 
-        logger.info("Completed query_extract")
-
+        logger.debug("query_response: %s", query_response, request_id=request_id)
+        logger.info("Completed query_extract", request_id=request_id)
         return {
             "query": query_response.query,
             "extracted_query": query_response.extract_query,
@@ -192,9 +182,12 @@ Output validated_data:
 
     def query_scrape(self, state: AgentState):
         """A simple scrape search node in the pipeline"""
+        request_id = state.get("request_id", None)
+        logger.debug("Started query_scrape node", request_id=request_id if request_id else "Unknown")
         search_products_and_similar = search_products_comprehensive(query=state["query"], scraper=self.scraper, embeddor=self.embeddor, vector_db=self.vector_db, llm=self.llm)
         
-        logger.info("Completed query_scrape")
+        logger.debug("Similar Products Returned: %s", search_products_and_similar[1])
+        logger.info("Completed query_scrape", request_id=request_id if request_id else "Unknown")
         return {
             "web_scraped_data": search_products_and_similar[0],
             "similar_products": search_products_and_similar[1]
@@ -202,21 +195,25 @@ Output validated_data:
 
     def query_synthesis(self, state: AgentState):
         """A node that evaluates vector DB relevance and summarizes markdown content"""
-        
+        request_id = state.get("request_id", None)
+        logger.debug("Started query_synthesis node", request_id=request_id if request_id else "Unknown")
+
         # Step 1: Handle markdown summarization
         web_data = state.get("web_scraped_data", None)
         if web_data is None:
-            logger.error("No web data returned")
+            logger.error("No web data returned", request_id=request_id if request_id else "Unknown")
             raise Exception("No web data returned")
         
         summarisations_needed = web_data.markdowns_needings_summarisation()
         for needed in summarisations_needed:
             result = self.llm.invoke_mini(user_query=markdown_summariser_prompt(title=web_data.query, markdown=needed["markdown"]))
-            logger.info(f"Summarized markdown at index {needed['idx']}")
+            logger.info(f"Summarized markdown at index {needed['idx']}", request_id=request_id if request_id else "Unknown")
             web_data.result[needed["idx"]] = result
         
         similar_products = state["similar_products"]
         target_info = web_data.query
+        logger.debug("Similar Products: %s", similar_products, request_id=request_id if request_id else "Unknown")
+        logger.debug("Query Wanting Similar Products For: %s", target_info, request_id=request_id if request_id else "Unknown")
         similar_products_simple = [
             {
                 "id": str(p.id),
@@ -258,13 +255,13 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
         resp = self.agent.invoke({"input": agent_input})
         output_text = resp.get("output", "")
 
-        print(f"\n\nOutput Text: {output_text}")
+        logger.debug("Output Text: %s", output_text)
 
         relevance_result = parser.parse(output_text)
         
-        logger.info(f"Vector DB relevance: {relevance_result.relevance_score}% ({relevance_result.matches}/{relevance_result.total})")
-        logger.info(f"Action taken: {relevance_result.action_taken}")
-        logger.info(f"Reasoning: {relevance_result.reasoning}")
+        logger.info(f"Vector DB relevance: {relevance_result.relevance_score}% ({relevance_result.matches}/{relevance_result.total})", request_id=request_id if request_id else "Unknown")
+        logger.info(f"Action taken: {relevance_result.action_taken}", request_id=request_id if request_id else "Unknown")
+        logger.debug(f"Reasoning: {relevance_result.reasoning}", request_id=request_id if request_id else "Unknown")
         
         if relevance_result.action_taken == "requery":
             # Note: The LLM returns simplified dicts, but we need to keep original PointStruct objects
@@ -273,8 +270,9 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
                 raise Exception("Agent claimed to requery but returned empty results")
 
             similar_products = relevance_result.similar_products
-            logger.info("Agent performed requery for better similar products")
+            logger.info("Agent performed requery for better similar products", request_id=request_id if request_id else "Unknown")
 
+        logger.info("Complete query_synthesis", request_id=request_id if request_id else "Unknown")
         return {
             "web_scraped_data": web_data,
             "similar_products": similar_products
@@ -282,6 +280,8 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
 
     def fill_data(self, state: AgentState):
         """A node that builds out the draft product for our shopify store"""
+        request_id = state.get("request_id", None)
+        logger.debug("Started fill_data node", request_id=request_id if request_id else "Unknown")
 
         parser = PydanticOutputParser(pydantic_object=DraftProduct)
         format_instructions = parser.get_format_instructions()
@@ -334,25 +334,32 @@ Then use the SAME style for your product.
         fill_data_response_text = self.llm.invoke_max(system_query=None, user_query=prompt)
         fill_data_response = parser.parse(fill_data_response_text)
 
-        logger.info("Completed fill_data")
+        logger.debug("Fill Data Response: %s", fill_data_response)
+        logger.info("Completed fill_data", request_id=request_id if request_id else "Unknown")
         return {
             "filled_data": fill_data_response
         }
 
     def post_shopify(self, state: AgentState):
         """A node that posts the response to shopify"""
+        request_id = state.get("request_id", None)
+        logger.debug("Starting post_shopify node", request_id=request_id if request_id else "Unknown")
         # fix issue with the concrete not being obtained properly
         draft = state.get("filled_data", None)
         if draft is None:
             raise TypeError("Draft returned none from the state")
         shop_response = shop_svc(draft_product=draft, shop=self.shop)
 
+        logger.debug("shop_response: %s", shop_response, request_id=request_id if request_id else "Unknown")
         logger.info("Completed post_shopify")
         return {
             "shopify_response": shop_response
         }
 
     def inventory(self, state: AgentState):
+        request_id = state.get("request_id", None)
+        logger.debug("Started inventory node", request_id=request_id if request_id else "Unknown")
+
         draft_response = state.get("shopify_response")
 
         inv_item_ids = draft_response.variant_inventory_item_ids
@@ -365,10 +372,10 @@ Then use the SAME style for your product.
                 if completed:
                     completed += 1
             except Exception as e:
-                logger.error(f"item {item.inventory_item_id} failed to updated inventory")
+                logger.error(f"item {item.inventory_item_id} failed to updated inventory", request_id=request_id if request_id else "Unknown")
                 failed += 1
 
-        logger.info(f"Completed inventory, Completed {completed}, Failed {failed}")
+        logger.info(f"Completed inventory, Completed {completed}, Failed {failed}", request_id=request_id if request_id else "Unknown")
         if failed > 0:
             return {
                 "inventory_filled": False
@@ -378,10 +385,10 @@ Then use the SAME style for your product.
                 "inventory_filled": True
             } 
 
-    async def service_workflow(self, query: str) -> DraftResponse:
-        print("Starting Workflow")
+    async def service_workflow(self, query: str, request_id: str) -> DraftResponse:
+        logger.info("Starting service workflow", request_id=request_id if request_id else "Unknown")
 
-        result = self.app.invoke({"query": query})
+        result = self.app.invoke({"query": query, "request_id": request_id})
         return result.get("shopify_response", None)
 
 def create_agent() -> ShopifyProductWorkflow:

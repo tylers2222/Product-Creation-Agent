@@ -2,6 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 from typing import Optional
+import structlog
+import logging
+import inspect
+import traceback
 
 from langchain_openai import ChatOpenAI
 
@@ -13,10 +17,6 @@ if parent_dir not in sys.path:
 from langchain_core import documents
 from qdrant_client.models import PointStruct
 from agents.infrastructure.vector_database.db import VectorDb
-import logging
-import structlog
-import inspect
-import traceback
 from agents.infrastructure.vector_database.embeddings import Embeddor
 from agents.infrastructure.firecrawl_api.client import Scraper
 from .schema import ScraperResponse, ProcessedResult
@@ -24,24 +24,11 @@ from agents.infrastructure.shopify_api.client import Shop
 from agents.infrastructure.shopify_api.product_schema import DraftProduct, DraftResponse
 from .llm import LLM, markdown_summariser
 
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.KeyValueRenderer(), # Renders to key=value pairs
-    ]
-)
-# Get the base logger
-base_logger = structlog.get_logger()
-
-llm = ChatOpenAI(
-    model = "gpt-4o-mini",
-    temperature = 0.1
-)
+logger = structlog.get_logger(__name__)
 
 def add_products_to_vector_db(products: list, database: VectorDb, embedder: Embeddor, collection_name: str):
     """Business Logic For Adding Products To Vector Db """
-    scoped_logs = base_logger.bind(function_name=inspect.stack()[0][3], collection_name=collection_name)
+    logger.debug("Started add_products_to_vector_db service", collection_name=collection_name, length_of_products=len(products))
     batch_size = 50
     batch_number = 1
 
@@ -49,13 +36,14 @@ def add_products_to_vector_db(products: list, database: VectorDb, embedder: Embe
         product_titles = [product.title for product in products]
         embeddings = embedder.embed_documents(documents=product_titles)
         if not embeddings:
-            scoped_logs.error("no embeddings returned")
+            logger.error("no embeddings returned")
             return None
 
-        scoped_logs.info("Recieved Embeddings")
+        logger.debug("Length of embeddings recieved: %s", len(embeddings))
+        logger.info("Recieved Embeddings")
 
         for i in range(0, len(products), batch_size):
-            scoped_logs.info(f"Starting Batch Number {batch_number} with size {batch_size}")
+            logger.info("Starting Batch", batch_number=batch_number, batch_size=batch_size)
             batch_products = products[i:i+batch_size]
             batch_embeddings = embeddings[i:i+batch_size]
 
@@ -76,29 +64,29 @@ def add_products_to_vector_db(products: list, database: VectorDb, embedder: Embe
 
             db_resp = database.upsert_points(collection_name=collection_name, points=points)
             if not db_resp:
-                scoped_logs.error("No database response on upsert")
+                logger.error("No database response on upsert")
                 return None
 
             if db_resp.error is not None:
-                scoped_logs.error(f"Error Adding Vectors To Vector Db: {db_resp.error} -> {traceback.format_exc()}")            
+                logger.error(f"Error Adding Vectors To Vector Db: {db_resp.error} -> {traceback.format_exc()}")            
                 return None
+
+            logger.debug("db_resp returned", db_resp=db_resp)
             batch_number += 1
 
-        scoped_logs.info("Successfully Uploaded Vectors To Vector Database")
+        logger.info("Successfully Uploaded Vectors To Vector Database")
         return "Success" # will change this to be more professional shortly
     except Exception as e:
-        scoped_logs.error(f"Error Adding Vectors To Vector Db: {e} -> {traceback.format_exc()}")
+        logger.error(f"Error Adding Vectors To Vector Db: {e} -> {traceback.format_exc()}")
         return None
 
 
 def scrape_results_svc(search_str: str, scraper: Scraper, llm: LLM) -> ScraperResponse | None:
+    logger.debug("Starting scrape_results_svc service", search_string_internet=search_str)
     try:
-        scoped_logs = base_logger.bind(function_name=inspect.stack()[0][3], search_string_internet=search_str)
-
-        # ----------------------------------------
         fire_result = scraper.scrape_and_search_site(query=search_str)
         scrapes_list = fire_result.data.web
-        scoped_logs.info(f"Found {len(scrapes_list)} urls in the {search_str} search")
+        logger.info(f"Found {len(scrapes_list)} urls in the {search_str} search")
 
         tokens = 0
         data_result = []
@@ -107,13 +95,13 @@ def scrape_results_svc(search_str: str, scraper: Scraper, llm: LLM) -> ScraperRe
             if hasattr(scrapes, "markdown"):
                 mrkdown = scrapes.markdown
             else:
-                scoped_logs.info(f"{idx} in the scrape loop didnt have a markdown")
+                logger.info(f"{idx} in the scrape loop didnt have a markdown")
                 continue
 
             if not mrkdown:
                 metadata = scrapes.metadata
                 url = getattr(metadata, 'url', 'unknown') if metadata else 'unknown'
-                scoped_logs.info(f"{url} didnt have markdown...")
+                logger.warn("URL didnt have markdown...", url=url)
                 failures.append(ProcessedResult(index=idx, error="No markdown content"))
                 continue
 
@@ -123,7 +111,6 @@ def scrape_results_svc(search_str: str, scraper: Scraper, llm: LLM) -> ScraperRe
                     summarised_markdown = markdown_summariser(title=search_str, markdown=mrkdown, llm=llm)
                     data_result.append(summarised_markdown)
 
-
                 except AttributeError as a:
                     raise AttributeError(a)
 
@@ -131,12 +118,13 @@ def scrape_results_svc(search_str: str, scraper: Scraper, llm: LLM) -> ScraperRe
                     raise TypeError(t)
 
                 except Exception as e:
-                    scoped_logs.warn(f"summarisation failed, adding full markdown: {e} -> name of error: {type(e).__name__}")
+                    logger.warn(f"summarisation failed, adding full markdown", error=e)
                     data_result.append(mrkdown)
                     failures.append(ProcessedResult(index=idx, error=str(e)))
             else:
                 data_result.append(mrkdown)
-            
+        
+        logger.info("Completed scrape_results_svc")
         token_estimate = tokens / 4
         return ScraperResponse(
             query = search_str,
@@ -147,38 +135,42 @@ def scrape_results_svc(search_str: str, scraper: Scraper, llm: LLM) -> ScraperRe
         )
         
     except Exception as e:
-        scoped_logs.error(f"failed to scrape results: {e} -> {traceback.format_exc()}")
+        logger.error(f"failed to scrape results: -> {traceback.format_exc()}", error=e, search_str=search_str)
         return None
 
 
 def embed_search_svc(query: str, embeddings: Embeddor) -> list[float] | None:
-    scoped_logs = base_logger.bind(function_name=inspect.stack()[0][3], query=query, returned_embeddor=True)
+    logger.debug("", query=query, returned_embeddor=True)
 
     try:
         embedded_query = embeddings.embed_documents(documents = [query])
-        scoped_logs.info("Returned embeddings successfully")
+        logger.debug("Embedded Query Returned", query=query, embedded_query=embedded_query[:100])
+        logger.info("Returned embeddings successfully")
         return embedded_query
     except Exception as embed_error:
-        scoped_logs.error(f"Error obtaining embed from query -> {embed_error}\n\n{traceback.format_exc()}")
+        logger.error(f"Error obtaining embed from query -> {traceback.format_exc()}", query=query, error=embed_error)
         return None
 
 def similarity_search_svc(vector_query: list[float], vector_db: VectorDb) -> list[PointStruct] | None:
-    scoped_logs = base_logger.bind(function_name=inspect.stack()[0][3], query=vector_query[0][:5] ,returned_db=True)
+    logger.debug("Started similarity_search_svc", query=vector_query[0][:5], returned_db=True)
 
     try:
         points = vector_db.search_points(collection_name="shopify_products", query_vector=vector_query[0], k=3)
         if not points:
-            scoped_logs.error("No search results returned for search vector")
+            logger.error("No search results returned for search vector")
             return None
 
         # return the whole points payload
+        logger.debug("similarity_search_svc points", points_list=points)
+        logger.info("Completed similarity_search_svc", length_points_list=len(points))
         return points
 
     except Exception as search_error:
-        scoped_logs.error(f"Error obtaining results from vector_db -> {search_error}\n\n{traceback.format_exc()}")
+        logger.error(f"Error obtaining results from vector_db -> {search_error}\n\n{traceback.format_exc()}", vector_query=vector_query[:25])
         return None
 
 def search_products_comprehensive(query: str, scraper: Scraper, embeddor: Embeddor, vector_db: VectorDb, llm: LLM):
+    logger.debug("Starting search_products_comprehensive", query=query)
     with ThreadPoolExecutor(max_workers=2) as executor:
         scraper_response = executor.submit(scrape_results_svc, query, scraper, llm)
 
@@ -190,10 +182,12 @@ def search_products_comprehensive(query: str, scraper: Scraper, embeddor: Embedd
         scraper_response_result = scraper_response.result()
         vector_result_result = search_response.result() if embeddings is not None else None
 
+
+        logger.info("Completed search_products_comprehensive")
         return scraper_response_result, vector_result_result
 
 def shop_svc(draft_product: DraftProduct, shop: Shop) -> DraftResponse:
     # add any business logic that pops up here later
-    base_logger.info("Sending Draft ->}")
-    print(draft_product.model_dump_json(indent=3))
+    # log the draft at info level for an overall check what may have gone wrong very quickly in the final result
+    logger.info("Sending Draft", draft=draft_product.model_dump_json())
     return shop.make_a_product_draft(product_listing=draft_product)

@@ -2,7 +2,6 @@ from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from .prompts import SYNTHESIS_AGENT_PROMPT
-import os
 
 def synthesis_agent(tools: list):
     """An agent that analyses the strength of similarity search for vector searches"""
