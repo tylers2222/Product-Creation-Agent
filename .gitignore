@@ -71,6 +71,5 @@ gui/config.json
 *.spec
 gui/README.md
 gui/*.bat
-gui/requirements.txt
 
 *.pem

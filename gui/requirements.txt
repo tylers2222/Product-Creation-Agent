@@ -1,0 +1,12 @@
+# GUI Framework
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# API Communication
+requests>=2.31.0
+
+# Data Validation (for models)
+pydantic>=2.5.0
+
+
+
