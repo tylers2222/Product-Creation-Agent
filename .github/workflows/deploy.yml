@@ -7,13 +7,31 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build:
+    name: Build docker image and post to docker hub + launch on Ec2 instance
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v4
 
-      - name: Print the directory
-        run: ls -la
+      - name: Login To DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_ACCESS_TOKEN}}
 
+      - name: Build Docker Image
+        id: build-docker-image
+        run: docker buildx build -t ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest --platform linux/amd64 --push .
+
+      - name: Create Pem File For SSH
+        id: create-pem
+        run: echo ${{secrets.CREATE_PEM}} > ty.pem
+
+      - name: Give Permissions
+        id: give-permissions
+        run: chmod 0400 ty.pem
+
+      - name: SSH In
+        id: ssh-in
+        run: ssh -i ty.pem ec2-user@${{secrets.PUBLIC_IP}} "docker stop $(docker ps -a -q) && docker rm $(docker ps -a -q) && docker pull ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest && docker run -d -p ${{secrets.PORT_NUMBER}}:${{secrets.PORT_NUMBER}} ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest"
