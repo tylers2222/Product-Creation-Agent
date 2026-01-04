@@ -66,6 +66,9 @@ jobs:
         working-directory: /gui
 
     steps:
+      - name: Inspect repo
+        uses: actions/checkout@v4
+
       - name: Print cwd
         run: |
           ls
