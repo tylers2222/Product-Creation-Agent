@@ -76,11 +76,11 @@ jobs:
       - name: Create mac executable
         uses: sayyid5416/pyinstaller@v1
         with:
-          spec: "gui/main.py"
-          requirements: "gui/requirements.txt"
+          spec: "./gui/main.py"
+          requirements: "./gui/requirements.txt"
           python_ver: "3.12.8"
-          exe_path: /gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images"
+          exe_path: ./gui
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images"
 
       - name: Check directory has a .app file
         run: |
