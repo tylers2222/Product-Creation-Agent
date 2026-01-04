@@ -26,7 +26,7 @@ jobs:
 
       - name: Create Pem File For SSH
         id: create-pem
-        run: echo "${{secrets.CREATE_PEM}}" > ty.pem
+        run: echo "${{secrets.PEM_FILE}}" > ty.pem
 
       - name: Give Permissions
         id: give-permissions
