@@ -33,6 +33,18 @@ jobs:
           dir
           echo finding any exe that exists
           dir -s "*.exe"
+
+      - name: Zip the exe file
+        run: |
+          Compress-Archive -Path "C:/ef-agent.exe" -DestinationPath "C:/ef-agnet.zip"
+
+      - name: Debug after zip
+        run: |
+          echo Listing dir
+          dir
+          echo Looking for zip
+          dir -s "*.zip"
+
       - name: Email new executable to admin
         uses: dawidd6/action-send-mail@v7
         with:
@@ -43,4 +55,4 @@ jobs:
           subject: Exe File Is Ready For Download
           to: ${{secrets.ADMIN_EMAIL}}
           from: ${{secrets.ADMIN_EMAIL}}
-          attachments: gui/ef-agent.exe
+          attachments: gui/ef-agent.zip
