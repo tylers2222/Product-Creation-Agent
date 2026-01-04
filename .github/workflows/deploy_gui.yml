@@ -63,7 +63,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: /gui
+        working-directory: ./gui
 
     steps:
       - name: Inspect repo
