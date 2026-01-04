@@ -48,9 +48,9 @@ jobs:
         with:
           python_ver: "3.12.8"
           requirements: "requirements.txt"
-          spec: "ef-agent.spec"
+          spec: "main.py"
           upload_exe_with_name: "ef-agent"
-          options: --onefile, --name "ef-agent", --windowed, --add-data "images:images" main.py
+          options: --onefile, --windowed, --add-data "images:images"
 
       - name: Email new executable to admin
         uses: dawidd6/action-send-mail@v7
