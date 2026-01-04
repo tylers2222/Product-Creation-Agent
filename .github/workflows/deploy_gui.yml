@@ -32,7 +32,7 @@ jobs:
           echo Listing dir
           dir
           echo finding any exe that exists
-          find . -name '*.exe'
+          dir /s "*.exe"
       - name: Email new executable to admin
         uses: dawidd6/action-send-mail@v7
         with:
