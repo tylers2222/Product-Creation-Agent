@@ -36,8 +36,10 @@ jobs:
       - name: Email new executable to admin
         uses: dawidd6/action-send-mail@v7
         with:
-          connection_url: ${{secrets.MAIL_CONNECTION}}
+          server_address: smtp.gmail.com
           server_port: 587
+          username: ${{secrets.ADMIN_EMAIL}}
+          password: ${{secrets.EMAIL_PASSWORD}}
           subject: Exe File Is Ready For Download
           to: ${{secrets.ADMIN_EMAIL}}
           from: ${{secrets.ADMIN_EMAIL}}
