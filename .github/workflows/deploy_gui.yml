@@ -89,14 +89,31 @@ jobs:
           echo Find a .app file
           find . -name "*.app"
 
-      - name: Email new executable to admin
-        uses: dawidd6/action-send-mail@v7
+      - name: Zip the executable
+        run: |
+          echo Print the cwd
+          pwd
+          echo Zip the executable
+          zip -r ef-agent.app ef-agent
+          echo Print the dir to check its there
+          ls
+
+      - name: Upload executable to google drive
+        uses: adityak74/google-drive-upload-git-action@main
         with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{secrets.ADMIN_EMAIL}}
-          password: ${{secrets.EMAIL_PASSWORD}}
-          subject: Exe File Is Ready For Download
-          to: ${{secrets.ADMIN_EMAIL}}
-          from: ${{secrets.ADMIN_EMAIL}}
-          attachments: gui/ef-agent.app
+          credentials: ${{ secrets.GOOGLE_SECRET }}
+          filename: "ef-agent.zip"
+          folderId: ${{secrets.FOLDER_ID}}
+          name: "ef-agent-mac.zip"
+          overwrite: "true"
+      #- name: Email new executable to admin
+      #  uses: dawidd6/action-send-mail@v7
+      #  with:
+      #    server_address: smtp.gmail.com
+      #    server_port: 587
+      #    username: ${{secrets.ADMIN_EMAIL}}
+      #    password: ${{secrets.EMAIL_PASSWORD}}
+      #    subject: Exe File Is Ready For Download
+      #    to: ${{secrets.ADMIN_EMAIL}}
+      #    from: ${{secrets.ADMIN_EMAIL}}
+      #    attachments: gui/ef-agent.app
