@@ -39,4 +39,5 @@ jobs:
           connection_url: ${{secrets.MAIL_CONNECTION}}
           subject: Exe File Is Ready For Download
           to: ${{secrets.ADMIN_EMAIL}}
-          attachments: gui/dist/ef-agent.exe
+          from: ${{secrets.ADMIN_EMAIL}}
+          attachments: gui /ef-agent.exe
