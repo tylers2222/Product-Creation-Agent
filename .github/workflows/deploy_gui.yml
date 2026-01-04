@@ -25,14 +25,14 @@ jobs:
           spec: "gui/main.py"
           upload_exe_with_name: "ef-agent"
           exe_path: ./gui
-          options: --onefile, --windowed, --add-data "gui/images;images"
+          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images;images"
 
       - name: Check where exe created debug
         run: |
           echo Listing dir
           dir
           echo finding any exe that exists
-          dir /s "*.exe"
+          dir -s "*.exe"
       - name: Email new executable to admin
         uses: dawidd6/action-send-mail@v7
         with:
