@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-gui:
+  build-gui-windows:
     name: Build the executable files for mac and windows systems
     runs-on: windows-latest
     defaults:
@@ -56,3 +56,44 @@ jobs:
           to: ${{secrets.ADMIN_EMAIL}}
           from: ${{secrets.ADMIN_EMAIL}}
           attachments: gui/ef-agent.zip
+
+  build-gui-mac:
+    name: Build the executable on mac
+    runs-on: macos-latest
+
+    defaults:
+      run:
+        working-directory: ./gui
+
+    steps:
+      - name: Print cwd
+        run: |
+          ls
+
+      - name: Create mac executable
+        uses: sayyid5416/pyinstaller@v1
+        with:
+          spec: "gui/main.py"
+          requirements: "gui/requirements.txt"
+          python_ver: "3.12.8"
+          exe_path: ./gui
+          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images"
+
+      - name: Check directory has a .app file
+        run: |
+          echo Printing Debug Directory
+          ls
+          echo Find a .app file
+          find . -name "*.app"
+
+      - name: Email new executable to admin
+        uses: dawidd6/action-send-mail@v7
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{secrets.ADMIN_EMAIL}}
+          password: ${{secrets.EMAIL_PASSWORD}}
+          subject: Exe File Is Ready For Download
+          to: ${{secrets.ADMIN_EMAIL}}
+          from: ${{secrets.ADMIN_EMAIL}}
+          attachments: gui/ef-agent.app
