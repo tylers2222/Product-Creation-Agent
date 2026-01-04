@@ -1,0 +1,35 @@
+name: Deploy Gui
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-gui:
+    name: Build the executable files for mac and windows systems
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ./gui
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+
+      - name: Print Dir
+        run: dir
+
+      - name: Pyinstaller action
+        uses: sayyid5416/pyinstaller@v1
+        with:
+          python_ver: "3.12.8"
+          requirements: "requirements.txt"
+          spec: "main.py"
+          upload_exe_with_name: "ef-agent"
+          options: --onefile, --windowed, --add-data "images:images"
+
+      - name: Email new executable to admin
+        uses: dawidd6/action-send-mail@v7
+        with:
+          connection_url: ${{secrets.MAIL_CONNECTION}}
+          subject: Exe File Is Ready For Download
+          to: ${{secrets.ADMIN_EMAIL}}
+          attachments: ./dist/ef-agent.exe
