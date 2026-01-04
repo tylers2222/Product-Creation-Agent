@@ -46,7 +46,7 @@ jobs:
       - name: Pyinstaller action
         uses: sayyid5416/pyinstaller@v1
         with:
-          python-ver: "3.12.8"
+          python_ver: "3.12.8"
           requirements: "requirements.txt"
           spec: "ef-agent.spec"
           upload_exe_with_name: "ef-agent"
