@@ -37,7 +37,8 @@ jobs:
         uses: dawidd6/action-send-mail@v7
         with:
           connection_url: ${{secrets.MAIL_CONNECTION}}
+          server_port: 587
           subject: Exe File Is Ready For Download
           to: ${{secrets.ADMIN_EMAIL}}
           from: ${{secrets.ADMIN_EMAIL}}
-          attachments: gui /ef-agent.exe
+          attachments: gui/ef-agent.exe
