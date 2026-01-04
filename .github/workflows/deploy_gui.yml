@@ -36,7 +36,7 @@ jobs:
 
       - name: Zip the exe file
         run: |
-          Compress-Archive -Path "C:/ef-agent.exe" -DestinationPath "C:/ef-agnet.zip"
+          Compress-Archive -Path "ef-agent.exe" -DestinationPath "ef-agnet.zip"
 
       - name: Debug after zip
         run: |
