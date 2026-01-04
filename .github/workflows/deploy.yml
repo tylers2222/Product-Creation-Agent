@@ -26,7 +26,7 @@ jobs:
 
       - name: Create Pem File For SSH
         id: create-pem
-        run: echo ${{secrets.CREATE_PEM}} > ty.pem
+        run: echo "${{secrets.CREATE_PEM}}" > ty.pem
 
       - name: Give Permissions
         id: give-permissions
@@ -34,4 +34,4 @@ jobs:
 
       - name: SSH In
         id: ssh-in
-        run: ssh -o StrictHostKeyChecking=no -i ty.pem ec2-user@${{secrets.PUBLIC_IP}} "docker stop $(docker ps -a -q) && docker rm $(docker ps -a -q) && docker pull ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest && docker run -d -p ${{secrets.PORT_NUMBER}}:${{secrets.PORT_NUMBER}} ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest"
+        run: ssh -o StrictHostKeyChecking=no -i ty.pem ec2-user@${{secrets.PUBLIC_IP}} "cd downloads && docker stop $(docker ps -a -q) && docker rm $(docker ps -a -q) && docker pull ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest && docker run -d -p ${{secrets.PORT_NUMBER}}:${{secrets.PORT_NUMBER}} ${{secrets.DOCKERHUB_USERNAME}}/product-agent:latest"
