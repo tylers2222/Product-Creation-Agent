@@ -102,7 +102,7 @@ jobs:
 
       - name: Run drop box script
         run: |
-          python -m upload_to_dropbox.py
+          python upload_to_dropbox.py
       #- name: Email new executable to admin
       #  uses: dawidd6/action-send-mail@v7
       #  with:
