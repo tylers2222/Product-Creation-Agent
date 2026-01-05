@@ -95,7 +95,7 @@ jobs:
           ls
 
       - name: Upload executable to dropbox
-        uses: gomes042/gh-actions-dropbox/files/upload@2
+        uses: gomes042/gh-actions-dropbox@2
         with:
           DROPBOX_APP_KEY: ${{secrets.DROPBOOX_ACCESS_KEY}} # has extra O in name
           DROPBOX_APP_SECRET: ${{secrets.DROPBOOX_ACCESS_SECRET}} # has extra O in name
