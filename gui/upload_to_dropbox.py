@@ -23,8 +23,8 @@ def upload_to_dropbox():
         mac_or_wndows = "windows"
 
     dbx = dropbox.Dropbox(os.getenv("DROPBOX_ACCESS_TOKEN"))
-    with open("ef-agent.zip", "rb") as f:
-        dbx.files_upload(f.read(), f"/Agent Executables/ef-agent-{mac_or_wndows}.zip")
+    with open(zip_files[0], "rb") as f:
+        dbx.files_upload(f.read(), f"/Agent Executables/ef-agent-{mac_or_wndows}.zip", mode=dropbox.files.WriteMode.overwrite)
 
     print("Successfully uploaded to drop box")
 
