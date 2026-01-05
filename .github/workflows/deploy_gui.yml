@@ -19,8 +19,18 @@ jobs:
 
       - name: Build env file for executable
         run: |
-          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > gui/.env
-          cat gui/.env
+          echo "Current directory:"
+          pwd
+          echo "Listing:"
+          ls -la
+          echo "Checking if gui exists:"
+          ls -la gui/
+          echo "Creating .env in gui:"
+          cd gui
+          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > .env
+          echo "Verifying it was created:"
+          ls -la
+          cat .env
 
       - name: Create Env file for python script
         run: |
