@@ -94,11 +94,17 @@ jobs:
           echo Print the dir to check its there
           ls
 
+      - name: Get drive credentials into temp file
+        run: |
+          echo "${{secrets.GOOGLE_SECRET}}" | base64 --decode > secret.json
+          echo Debug if load worked
+          ls
+
       - name: Upload executable to google drive
         uses: willo32/google-drive-upload-action@v1
         with:
-          credentials: ${{ secrets.GOOGLE_SECRET }}
-          target: "ef-agent.zip"
+          credentials: secret.txt # have to check if in this it works from the root
+          target: "./gui/ef-agent.zip"
           parent_folder_id: ${{secrets.FOLDER_ID}}
           name: "ef-agent-mac.zip"
       #- name: Email new executable to admin
