@@ -17,6 +17,16 @@ jobs:
       - name: Print Dir
         run: dir
 
+      - name: Create Env file for python script
+        run: |
+          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
+          echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
+          echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
+          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
+          echo Print Dir for debug
+          dir /A
+
       - name: Pyinstaller action
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -44,16 +54,6 @@ jobs:
           dir
           echo Looking for zip
           dir -s "*.zip"
-
-      - name: Create Env file for python script
-        run: |
-          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
-          echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
-          echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
-          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
-          echo Print Dir for debug
-          dir /A
 
       - name: Run python script
         run: |
