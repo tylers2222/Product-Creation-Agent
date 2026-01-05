@@ -95,14 +95,13 @@ jobs:
           ls
 
       - name: Upload executable to dropbox
-        uses: Lewuathe/dropbox-github-action@v1.0.3
+        uses: gomes042/gh-actions-dropbox/files/upload@2
         with:
-          dropbox-app-key: ${{secrets.DROPBOOX_ACCESS_KEY}} # has extra O in name
-          dropbox-app-secret: ${{secrets.DROPBOOX_ACCESS_SECRET}} # has extra O in name
-          dropbox-refresh-token: ${{secrets.DROPBOX_ACCESS_TOKEN}}
-          source-path: ./gui/ef-agent.zip
-          target-path: /Agent Executables/ef-agent-mac.zip
-          write-mode: overwrite
+          DROPBOX_APP_KEY: ${{secrets.DROPBOOX_ACCESS_KEY}} # has extra O in name
+          DROPBOX_APP_SECRET: ${{secrets.DROPBOOX_ACCESS_SECRET}} # has extra O in name
+          DROPBOX_REFRESH_TOKEN: ${{secrets.DROPBOX_ACCESS_TOKEN}}
+          SOURCE_PATH: ./gui/ef-agent.zip
+          DEST_PATH: /Agent Executables/ef-agent-mac.zip
 
       #- name: Email new executable to admin
       #  uses: dawidd6/action-send-mail@v7
