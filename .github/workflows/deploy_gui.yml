@@ -103,7 +103,7 @@ jobs:
       - name: Upload executable to google drive
         uses: willo32/google-drive-upload-action@v1
         with:
-          credentials: secret.txt # have to check if in this it works from the root
+          credentials: ${{secrets.GOOGLE_SECRET}} # have to check if in this it works from the root
           target: "./gui/ef-agent.zip"
           parent_folder_id: ${{secrets.FOLDER_ID}}
           name: "ef-agent-mac.zip"
