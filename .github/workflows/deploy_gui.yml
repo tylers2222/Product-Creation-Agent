@@ -111,6 +111,8 @@ jobs:
           echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
           echo Print Directory
           ls -a
+          echo Catting the config for json structure
+          cat config.json
 
       - name: Run drop box script
         run: |
