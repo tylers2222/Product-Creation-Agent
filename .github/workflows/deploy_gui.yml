@@ -109,6 +109,8 @@ jobs:
       - name: Create config file
         run: |
           echo {"api_url": "${{secrets.PUBLIC_IP}}"} > config.json
+          echo Print Directory
+          ls -a
 
       - name: Run drop box script
         run: |
