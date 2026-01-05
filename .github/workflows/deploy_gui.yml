@@ -17,6 +17,10 @@ jobs:
       - name: Print Dir
         run: dir
 
+      - name: Create config file
+        run: |
+          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
+
       - name: Pyinstaller action
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -25,7 +29,7 @@ jobs:
           spec: "gui/main.py"
           upload_exe_with_name: "ef-agent"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images;images"
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images", "./gui/config.json;."
 
       - name: Check where exe created debug
         run: |
@@ -51,10 +55,6 @@ jobs:
           echo Print Dir for debug
           dir /A
 
-      - name: Create config file
-        run: |
-          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
-
       - name: Run python script
         run: |
           python upload_to_dropbox.py
@@ -75,6 +75,14 @@ jobs:
         run: |
           ls
 
+      - name: Create config file
+        run: |
+          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
+          echo Print Directory
+          ls -a
+          echo Catting the config for json structure
+          cat config.json
+
       - name: Create mac executable
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -82,7 +90,7 @@ jobs:
           requirements: "./gui/requirements.txt"
           python_ver: "3.12.8"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images"
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images", "./gui/config.json:."
 
       - name: Check directory has a .app file
         run: |
@@ -105,14 +113,6 @@ jobs:
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
           echo Check Director for debugging
           ls -a
-
-      - name: Create config file
-        run: |
-          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
-          echo Print Directory
-          ls -a
-          echo Catting the config for json structure
-          cat config.json
 
       - name: Run drop box script
         run: |
