@@ -49,7 +49,7 @@ jobs:
         uses: willo32/google-drive-upload-action@v1
         with:
           credentials: ${{ secrets.GOOGLE_SECRET }}
-          target: "ef-agent.zip"
+          target: "./gui/ef-agent.zip"
           parent_folder_id: ${{secrets.FOLDER_ID}}
           name: "ef-agent-windows.zip"
 
