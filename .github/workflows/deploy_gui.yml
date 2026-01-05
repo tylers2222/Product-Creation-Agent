@@ -111,6 +111,8 @@ jobs:
           ls -a
           echo Env File
           cat .env
+          echo Catting env
+          cat .env
 
       - name: Run drop box script
         run: |
