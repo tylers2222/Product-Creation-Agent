@@ -53,23 +53,11 @@ jobs:
 
       - name: Create config file
         run: |
-          echo {"api_url": "${{secrets.PUBLIC_IP}}"} > config.json
+          echo '{"api_url": "${{secrets.PUBLIC_IP}}"}' > config.json
 
       - name: Run python script
         run: |
           python upload_to_dropbox.py
-
-      - name: Email Admin
-        uses: dawidd6/action-send-mail@v7
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{secrets.ADMIN_EMAIL}}
-          password: ${{secrets.EMAIL_PASSWORD}}
-          subject: Exe File Is Ready For Download
-          to: ${{secrets.ADMIN_EMAIL}}
-          from: ${{secrets.ADMIN_EMAIL}}
-          body: "New executables launched to drop box"
 
   build-gui-mac:
     name: Build the executable on mac
