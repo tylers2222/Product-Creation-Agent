@@ -47,8 +47,8 @@ jobs:
 
       - name: Create Env file for python script
         run: |
-          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} > .env
+          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Print Dir for debug
           dir /A
 
@@ -100,7 +100,7 @@ jobs:
       - name: Build env file for drop box script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} > .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Check Director for debugging
           ls -a
           echo Env File
