@@ -99,13 +99,12 @@ jobs:
           ls
 
       - name: Upload executable to google drive
-        uses: adityak74/google-drive-upload-git-action@main
+        uses: willo32/google-drive-upload-action@v1
         with:
           credentials: ${{ secrets.GOOGLE_SECRET }}
-          filename: "ef-agent.zip"
-          folderId: ${{secrets.FOLDER_ID}}
+          target: "ef-agent.zip"
+          parent_folder_id: ${{secrets.FOLDER_ID}}
           name: "ef-agent-mac.zip"
-          overwrite: "true"
       #- name: Email new executable to admin
       #  uses: dawidd6/action-send-mail@v7
       #  with:
