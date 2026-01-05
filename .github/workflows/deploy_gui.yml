@@ -98,7 +98,7 @@ jobs:
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
           echo Check Director for debugging
-          ls
+          ls -a
 
       - name: Run drop box script
         run: |
