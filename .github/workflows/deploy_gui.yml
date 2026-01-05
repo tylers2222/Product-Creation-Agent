@@ -50,7 +50,7 @@ jobs:
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
-          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}}
+          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
           echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Print Dir for debug
           dir /A
@@ -105,13 +105,11 @@ jobs:
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
-          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}}
+          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
           echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Check Director for debugging
           ls -a
           echo Env File
-          cat .env
-          echo Catting env
           cat .env
 
       - name: Run drop box script
