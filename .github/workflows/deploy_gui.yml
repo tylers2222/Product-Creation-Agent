@@ -17,10 +17,6 @@ jobs:
       - name: Print Dir
         run: dir
 
-      - name: Create config file
-        run: |
-          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
-
       - name: Pyinstaller action
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -29,7 +25,7 @@ jobs:
           spec: "gui/main.py"
           upload_exe_with_name: "ef-agent"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images", "./gui/config.json;."
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images"
 
       - name: Check where exe created debug
         run: |
@@ -52,6 +48,7 @@ jobs:
       - name: Create Env file for python script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} > .env
           echo Print Dir for debug
           dir /A
 
@@ -75,14 +72,6 @@ jobs:
         run: |
           ls
 
-      - name: Create config file
-        run: |
-          echo "{\"api_url\": \"${{secrets.PUBLIC_IP}}\"}" > config.json
-          echo Print Directory
-          ls -a
-          echo Catting the config for json structure
-          cat config.json
-
       - name: Create mac executable
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -90,7 +79,7 @@ jobs:
           requirements: "./gui/requirements.txt"
           python_ver: "3.12.8"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images", "./gui/config.json:."
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images"
 
       - name: Check directory has a .app file
         run: |
@@ -111,8 +100,11 @@ jobs:
       - name: Build env file for drop box script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} > .env
           echo Check Director for debugging
           ls -a
+          echo Env File
+          cat .env
 
       - name: Run drop box script
         run: |

@@ -42,29 +42,7 @@ def resource_path(relative_path):
 # API CONFIGURATION
 # ========================================
 # Reads from config.json if exists, otherwise uses default
-CONFIG_FILE = resource_path("config.json")
-
-def load_api_url():
-    """Load API URL from config file or environment variable"""
-    logger.debug(f"Loading API URL from config file: {CONFIG_FILE}")
-    
-    # 2. Try config.json (for distribution)
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                config = json.load(f)
-                api_url = config.get("api_url", None)
-                logger.debug(f"Loaded API URL from config: {api_url}")
-                return api_url
-        except Exception as e:
-            logger.error(f"Failed to load config.json: {e}")
-            pass
-
-    logger.warning("No API URL configured, returning None")
-    return None
-
-
-API_BASE_URL = load_api_url()
+API_BASE_URL = os.getenv("API_BASE_URL")
 logger.info(f"API Base URL: {API_BASE_URL}")
 
 # ========================================
