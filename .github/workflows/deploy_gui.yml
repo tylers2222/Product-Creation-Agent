@@ -75,6 +75,18 @@ jobs:
         run: |
           ls
 
+      - name: Build env file for drop box script
+        run: |
+          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
+          echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
+          echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
+          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
+          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
+          echo Check Director for debugging
+          ls -a
+          echo Env File
+          cat .env
+
       - name: Create mac executable
         uses: sayyid5416/pyinstaller@v1
         with:
@@ -99,18 +111,6 @@ jobs:
           zip -r ef-agent.zip ef-agent.app
           echo Print the dir to check its there
           ls
-
-      - name: Build env file for drop box script
-        run: |
-          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
-          echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
-          echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
-          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
-          echo Check Director for debugging
-          ls -a
-          echo Env File
-          cat .env
 
       - name: Run drop box script
         run: |
