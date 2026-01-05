@@ -25,7 +25,7 @@ jobs:
           spec: "gui/main.py"
           upload_exe_with_name: "ef-agent"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images"
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images", --add-data "./gui/.env;."
 
       - name: Check where exe created debug
         run: |
@@ -82,7 +82,7 @@ jobs:
           requirements: "./gui/requirements.txt"
           python_ver: "3.12.8"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images"
+          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images:images", --add-data "./gui/.env;."
 
       - name: Check directory has a .app file
         run: |
