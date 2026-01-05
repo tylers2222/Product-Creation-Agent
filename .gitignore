@@ -71,5 +71,9 @@ gui/config.json
 *.spec
 gui/README.md
 gui/*.bat
+gui/service_account.json
+gui/*.zip
+gui/*.exe
+gui/*.app
 
 *.pem

@@ -94,15 +94,15 @@ jobs:
           echo Print the dir to check its there
           ls
 
-      - name: Upload executable to dropbox
-        uses: gomes042/gh-actions-dropbox/files/upload@23ce81287e83f01c19c9f60b1849b746db6616b5
-        with:
-          DROPBOX_APP_KEY: ${{secrets.DROPBOOX_ACCESS_KEY}} # has extra O in name
-          DROPBOX_APP_SECRET: ${{secrets.DROPBOOX_ACCESS_SECRET}} # has extra O in name
-          DROPBOX_REFRESH_TOKEN: ${{secrets.DROPBOX_ACCESS_TOKEN}}
-          SOURCE_PATH: ./gui/ef-agent.zip
-          DEST_PATH: /Agent Executables/ef-agent-mac.zip
+      - name: Build env file for drop box script
+        run: |
+          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
+          echo Check Director for debugging
+          ls
 
+      - name: Run drop box script
+        run: |
+          python -m upload_to_dropbox.py
       #- name: Email new executable to admin
       #  uses: dawidd6/action-send-mail@v7
       #  with:
