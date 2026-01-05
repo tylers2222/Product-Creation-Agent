@@ -94,7 +94,7 @@ jobs:
           echo Print the cwd
           pwd
           echo Zip the executable
-          zip -r ef-agent.app ef-agent
+          zip -r ef-agent.zip ef-agent.app
           echo Print the dir to check its there
           ls
 
