@@ -17,13 +17,17 @@ jobs:
       - name: Print Dir
         run: dir
 
+      - name: Build env file for executable
+        run: |
+          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > gui/.env
+          cat gui/.env
+
       - name: Create Env file for python script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
           echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Print Dir for debug
           dir /A
 
@@ -35,7 +39,7 @@ jobs:
           spec: "gui/main.py"
           upload_exe_with_name: "ef-agent"
           exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "./gui/images;images", --add-data "./gui/.env;."
+          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images", --add-data "gui/.env;."
 
       - name: Check where exe created debug
         run: |
@@ -75,13 +79,17 @@ jobs:
         run: |
           ls
 
+      - name: Build env file for executable
+        run: |
+          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > gui/.env
+          cat gui/.env
+
       - name: Build env file for drop box script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
           echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
-          echo API_BASE_URL=${{secrets.API_BASE_URL}} >> .env
           echo Check Director for debugging
           ls -a
           echo Env File
