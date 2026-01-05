@@ -45,17 +45,13 @@ jobs:
           echo Looking for zip
           dir -s "*.zip"
 
-      - name: Email new executable to admin
-        uses: dawidd6/action-send-mail@v7
+      - name: Upload executable to google drive
+        uses: willo32/google-drive-upload-action@v1
         with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{secrets.ADMIN_EMAIL}}
-          password: ${{secrets.EMAIL_PASSWORD}}
-          subject: Exe File Is Ready For Download
-          to: ${{secrets.ADMIN_EMAIL}}
-          from: ${{secrets.ADMIN_EMAIL}}
-          attachments: gui/ef-agent.zip
+          credentials: ${{ secrets.GOOGLE_SECRET }}
+          target: "ef-agent.zip"
+          parent_folder_id: ${{secrets.FOLDER_ID}}
+          name: "ef-agent-windows.zip"
 
   build-gui-mac:
     name: Build the executable on mac
