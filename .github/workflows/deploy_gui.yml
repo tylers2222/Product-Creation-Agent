@@ -92,7 +92,7 @@ jobs:
 
       - name: Create mac executable
         run: |
-          pyinstaller --onefile --windowed --name "ef-agent" --add-data "images:images" --add-data ".env:." main.py
+          python -m pyinstaller --onefile --windowed --name "ef-agent" --add-data "images:images" --add-data ".env:." main.py
 
       - name: Check directory has a .app file
         run: |
