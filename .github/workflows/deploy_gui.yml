@@ -22,10 +22,10 @@ jobs:
 
       - name: Create Env file for python script
         run: |
-          echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} &&  > .env
-          echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
-          echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
-          echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
+          echo "DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}}"  > .env
+          echo "DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}}" >> .env
+          echo "DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}}" >> .env
+          echo "DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}}" >> .env
           echo "API_BASE_URL=${{secrets.API_BASE_URL}}" >> .env
           echo Print Dir for debug
           dir /A
