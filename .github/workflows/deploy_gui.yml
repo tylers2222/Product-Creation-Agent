@@ -32,7 +32,7 @@ jobs:
 
       - name: Pyinstaller action
         run: |
-          pyinstaller --onefile, --windowed, --name "ef-agent", --add-data "gui/images;images", --add-data "gui/.env;." main.py
+          pyinstaller --onefile --windowed --name "ef-agent" --add-data "gui/images;images" --add-data "gui/.env;." main.py
 
       - name: Check where exe created debug
         run: |
