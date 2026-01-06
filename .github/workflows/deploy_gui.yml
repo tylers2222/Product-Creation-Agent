@@ -74,6 +74,10 @@ jobs:
       - name: Inspect repo
         uses: actions/checkout@v4
 
+      - name: Install requirements
+        run: |
+          pip install -r requirements.txt
+
       - name: Print cwd
         run: |
           ls
