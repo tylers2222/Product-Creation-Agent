@@ -81,17 +81,8 @@ jobs:
 
       - name: Build env file for executable
         run: |
-          echo "Current directory:"
-          pwd
-          echo "Listing:"
-          ls -la
-          echo "Checking if gui exists:"
-          ls -la gui/
-          echo "Creating .env in gui:"
-          cd gui
           echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > .env
-          echo "Verifying it was created:"
-          ls -la
+          echo "Created .env:"
           cat .env
 
       - name: Build env file for drop box script
