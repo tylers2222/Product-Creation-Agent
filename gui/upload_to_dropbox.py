@@ -13,7 +13,7 @@ logging.basicConfig(
 
 def get_authorization_code():
     load_dotenv()
-    url =f"https://www.dropbox.com/oauth2/authorize?client_id={os.getenv("DROPBOX_APP_KEY")}&token_access_type=offline&response_type=code"
+    url =f"https://www.dropbox.com/oauth2/authorize?client_id={os.getenv('DROPBOX_APP_KEY')}&token_access_type=offline&response_type=code"
     response = requests.get(url=url)
 
     # visting this in the browser and get your code
