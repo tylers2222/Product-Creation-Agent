@@ -1,7 +1,6 @@
 name: Deploy Gui
 
-on:
-  workflow_dispatch:
+on: ["push"]
 
 jobs:
   build-gui-windows:
@@ -79,31 +78,21 @@ jobs:
         run: |
           ls
 
-      - name: Build env file for executable
-        run: |
-          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > .env
-          echo "Created .env:"
-          cat .env
-
       - name: Build env file for drop box script
         run: |
           echo DROPBOX_ACCESS_TOKEN=${{secrets.DROPBOX_ACCESS_TOKEN}} > .env
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
           echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
+          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" >> .env
           echo Check Director for debugging
           ls -a
           echo Env File
           cat .env
 
       - name: Create mac executable
-        uses: sayyid5416/pyinstaller@v1
-        with:
-          spec: "./gui/main.py"
-          requirements: "./gui/requirements.txt"
-          python_ver: "3.12.8"
-          exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images", --add-data "gui/.env:."
+        run: |
+          pyinstaller --onefile --windowed --name "ef-agent" --add-data "images:images" --add-data ".env:." main.py
 
       - name: Check directory has a .app file
         run: |
