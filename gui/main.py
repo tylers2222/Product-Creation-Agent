@@ -14,8 +14,6 @@ import logging
 # Import local models (standalone GUI - no backend dependencies)
 from models import PromptVariant, Variant, Option, InventoryAtStores, format_product_input
 
-load_dotenv()
-
 # ========================================
 # LOGGING CONFIGURATION
 # ========================================
@@ -38,6 +36,7 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+load_dotenv(resource_path('.env'))
 # ========================================
 # API CONFIGURATION
 # ========================================

@@ -82,6 +82,19 @@ def upload_to_dropbox():
         print("Windows Os found")
         mac_or_wndows = "windows"
 
+    if mac_or_wndows == "":
+        dist_exists = os.path.exists("./dist")
+        if not dist_exists:
+            raise Exception("No executables found")
+
+        app_file = glob.glob("./dist/*.app")
+        exe_file = glob.glob("./dist/*.exe")
+
+        if app_file:
+            mac_or_wndows = "mac"
+        if exe_file:
+            mac_or_wndows = "windows"
+
     dbx = dropbox.Dropbox(oauth2_access_token=get_access_token())
     with open(zip_files[0], "rb") as f:
         dbx.files_upload(f.read(), f"/Agent Executables/ef-agent-{mac_or_wndows}.zip", mode=dropbox.files.WriteMode.overwrite)

@@ -112,7 +112,7 @@ jobs:
           echo Zip the executable
           zip -r ef-agent.zip ./dist/ef-agent.app
           echo Print the dir to check its there
-          ls
+          ls -a
 
       - name: Run drop box script
         run: |
