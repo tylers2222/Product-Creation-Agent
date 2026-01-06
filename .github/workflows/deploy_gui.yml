@@ -16,10 +16,9 @@ jobs:
       - name: Print Dir
         run: dir
 
-      - name: Build env file for executable
+      - name: Install reqs
         run: |
-          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" > gui/.env
-          cat gui/.env
+          pip install -r requirements.txt
 
       - name: Create Env file for python script
         run: |
@@ -27,18 +26,13 @@ jobs:
           echo DROPBOX_APP_KEY=${{secrets.DROPBOOX_ACCESS_KEY}} >> .env
           echo DROPBOX_APP_SECRET=${{secrets.DROPBOOX_ACCESS_SECRET}} >> .env
           echo DROPBOX_REFRESH_TOKEN=${{secrets.DROPBOX_REFRESH_TOKEN}} >> .env
+          echo "API_BASE_URL=${{secrets.API_BASE_URL}}" >> .env
           echo Print Dir for debug
           dir /A
 
       - name: Pyinstaller action
-        uses: sayyid5416/pyinstaller@v1
-        with:
-          python_ver: "3.12.8"
-          requirements: "gui/requirements.txt"
-          spec: "gui/main.py"
-          upload_exe_with_name: "ef-agent"
-          exe_path: ./gui
-          options: --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images", --add-data "gui/.env;."
+        run: |
+          python --onefile, --windowed, --name "ef-agent", --add-data "gui/images:images", --add-data "gui/.env;."
 
       - name: Check where exe created debug
         run: |
@@ -49,7 +43,7 @@ jobs:
 
       - name: Zip the exe file
         run: |
-          Compress-Archive -Path "ef-agent.exe" -DestinationPath "ef-agent.zip"
+          Compress-Archive -Path "./dist/ef-agent.exe" -DestinationPath "ef-agent.zip"
 
       - name: Debug after zip
         run: |
