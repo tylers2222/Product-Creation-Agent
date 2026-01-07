@@ -65,3 +65,6 @@ async def process_internal_query(query: PromptVariant, redis = Depends(get_job_d
     except Exception as e:
         logger.error("Task Failed To Queue", job_id=str(request_id), exc_info=True)
         raise HTTPException(status_code=400, detail={"message": "Failed to queue your task, contact admin with your wanted request and job id", "job_id": request_id})
+
+        
+
