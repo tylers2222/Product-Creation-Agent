@@ -103,3 +103,10 @@ class DraftResponse(BaseModel):
     time_of_comepletion: datetime.datetime
     status_code: int | None
 
+
+class ShopifyProductSchema(BaseModel):
+   body_html:       str
+   id:              int
+   title:           str
+   product_type:    str
+   tags:            str

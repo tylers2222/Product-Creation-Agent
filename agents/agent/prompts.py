@@ -1,5 +1,5 @@
-
 #-----------------------------------------------------------------------------------------------
+
 from pydantic import BaseModel
 from ..infrastructure.shopify_api.product_schema import Variant
 import structlog

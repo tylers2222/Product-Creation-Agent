@@ -21,7 +21,7 @@ async def get_job_status(job_id: str, redis = Depends(get_job_database)):
     """Used prediminently by GUI to poll for their job requests"""
     logger.debug("Started get_job_status", job_id=job_id)
     try:
-        redis_return_data = redis.hget_data(database_name="agent:jobs", key=job_id)
+        redis_return_data = redis.get_data(database_name="agent:jobs", key=job_id)
         if redis_return_data is None:
             # need some systematic alert to say why is this happening, major error to have a GUI asking for a job id and it not existing
             # could potentially poll forever if no timeout is added on the GUI polling for results
@@ -66,5 +66,8 @@ async def process_internal_query(query: PromptVariant, redis = Depends(get_job_d
         logger.error("Task Failed To Queue", job_id=str(request_id), exc_info=True)
         raise HTTPException(status_code=400, detail={"message": "Failed to queue your task, contact admin with your wanted request and job id", "job_id": request_id})
 
-        
+#@router.post("/internal/new_product_created"):
+#async def product_created_Webhook():
+    # Create webhook first and post to postman
+
 

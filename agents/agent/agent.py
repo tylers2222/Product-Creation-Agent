@@ -1,6 +1,6 @@
 from typing import Protocol, TypedDict
 import json
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import structlog
 
 from langgraph.graph import START, StateGraph, END
@@ -18,7 +18,7 @@ from .agent_definitions import synthesis_agent
 from .services import search_products_comprehensive, shop_svc
 from langchain_core.output_parsers import PydanticOutputParser
 from .llm import llm_client, LLM
-from .prompts import markdown_summariser_prompt
+from .prompts import PromptVariant, markdown_summariser_prompt
 from .tools import create_all_tools
 from config import create_service_container, ServiceContainer
 
@@ -32,8 +32,8 @@ class AgentProtocol(Protocol):
 class AgentState(TypedDict):
     """State of agent operations"""
     request_id: str
-    query: str # the original query the user writes
-    extract_query: str # the extracted query from hte LLM
+    query: PromptVariant # the original query the user writes
+    adapted_search_string: str # the upgraded google search query
     validated_data: dict # dictionary representation of the product and its internal data
     web_scraped_data: ScraperResponse # the result of the web scraping operation
     similar_products: list[PointStruct]
@@ -43,9 +43,7 @@ class AgentState(TypedDict):
 
 # Pydantic models for responses
 class QueryResponse(BaseModel):
-    query: str
-    extract_query: str
-    validated_data: dict
+    adapted_search_string: str = Field(description="A new and improved search string to get products on google, otherwise None")
 
 class QuerySynthesis(BaseModel):
     web_scraped_data: ScraperResponse
@@ -64,8 +62,8 @@ class ShopifyProductWorkflow:
     def __init__(self, shop: Shop, scraper: Scraper, vector_db: VectorDb, embeddor: Embeddor, llm: LLM, tools: list):
         logger.debug("Inititalising ShopifyProductWorkflow class")
 
-        self.llm = llm
         self.workflow = StateGraph(AgentState)
+        self.llm = llm
         self.shop = shop
         self.scraper = scraper
         self.vector_db = vector_db
@@ -91,94 +89,13 @@ class ShopifyProductWorkflow:
         logger.info("Successfully initialised ShopifyProductWorkflow class")
 
     def query_extract(self, state: AgentState):
-        request_id = state.get("request_id", None)
-        logger.debug("Starting query_extract node for request %s", request_id)
-        parser = PydanticOutputParser(pydantic_object=QueryResponse)
-        format_instructions = parser.get_format_instructions()
         
-        prompt = f"""STEP 1: VALIDATE USER INPUT
-
-User Query: {state["query"]}
-
-Your job is to UNDERSTAND what the user is asking for and extract key information.
-
-REQUIRED OUTPUTS:
-1. query: The search query to use for finding the product online (usually the product name and brand)
-2. extract_query: A refined query focusing on key product identifiers (brand + product name)
-3. validated_data: A dictionary with this EXACT structure:
-   {{
-     "brand_name": "string",
-     "product_name": "string",
-     "variants": [
-       {{
-         "option1_value": {{"option_name": "Size", "option_value": "50 g"}},
-         "option2_value": {{"option_name": "Flavor", "option_value": "Chocolate"}} OR null,
-         "option3_value": null OR {{"option_name": "Type", "option_value": "Premium"}},
-         "sku": 12345,
-         "barcode": "0810095637971",
-         "price": 4.95,
-         "compare_at": null OR 9.99,
-         "product_weight": 0.05,
-         "inventory_at_stores": null OR {{"city": 15, "south_melbourne": 15}}
-       }}
-     ]
-   }}
-
-CRITICAL RULES:
-1. option1_value, option2_value, option3_value MUST be objects with "option_name" and "option_value" fields, NOT strings
-2. product_weight MUST be in KILOGRAMS (kg). Convert: 50g = 0.05, 2kg = 2.0, 5lb ≈ 2.27
-3. Extract ALL variants mentioned - each unique size/flavor combination is a separate variant
-4. If a variant has multiple options (size + flavor), include BOTH option1_value AND option2_value
-5. barcode should be a string (can have leading zeros)
-6. If compare_at price is not mentioned, use null
-7. INVENTORY_AT_STORES: Look for inventory numbers in the input. If mentioned, extract as {{"city": <number>, "south_melbourne": <number>}}. Common patterns:
-   - "city: 15, south_melbourne: 15"
-   - "inventory: 15, 15"
-   - "City: 15, South Melbourne: 15"
-   - "inventory_at_stores: {{city: 15, south_melbourne: 15}}"
-   - If inventory numbers are the same for all variants, apply to all variants
-   - If inventory numbers are NOT mentioned anywhere in the input, use null
-
-EXAMPLE 1 (with inventory):
-Input: "Create EHP OxyShred Protein Lean Bar, 50g in White Choc Caramel, Strawberries & Cream, Choc Peanut Caramel, Cookies & Cream, all $4.95, inventory: city=15, south_melbourne=15"
-
-Output validated_data:
-{{
-  "brand_name": "EHP",
-  "product_name": "OxyShred Protein Lean Bar",
-  "variants": [
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "White Choc Caramel"}}, "sku": 922026, "barcode": "0810095637971", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Strawberries & Cream"}}, "sku": 922028, "barcode": "0810095637933", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Choc Peanut Caramel"}}, "sku": 922027, "barcode": "0810095637988", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}},
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Cookies & Cream"}}, "sku": 922029, "barcode": "0810095637945", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": {{"city": 15, "south_melbourne": 15}}}}
-  ]
-}}
-
-EXAMPLE 2 (without inventory):
-Input: "Create EHP OxyShred Protein Lean Bar, 50g in White Choc Caramel, Strawberries & Cream, all $4.95"
-
-Output validated_data:
-{{
-  "brand_name": "EHP",
-  "product_name": "OxyShred Protein Lean Bar",
-  "variants": [
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "White Choc Caramel"}}, "sku": 922026, "barcode": "0810095637971", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": null}},
-    {{"option1_value": {{"option_name": "Size", "option_value": "50 g"}}, "option2_value": {{"option_name": "Flavor", "option_value": "Strawberries & Cream"}}, "sku": 922028, "barcode": "0810095637933", "price": 4.95, "compare_at": null, "product_weight": 0.05, "inventory_at_stores": null}}
-  ]
-}}
-
-{format_instructions}
-"""
-        llm_response = self.llm.invoke_mini(system_query = None, user_query=prompt)
-        query_response = parser.parse(llm_response)
-
-        logger.debug("query_response: %s", query_response, request_id=request_id)
-        logger.info("Completed query_extract", request_id=request_id)
         return {
-            "query": query_response.query,
-            "extracted_query": query_response.extract_query,
-            "validated_data": query_response.validated_data,
+            "adapted_search_string": query_response.adapted_search_string,
         }
+
+    def check_if_exists(state: AgentState):
+        
 
     def query_scrape(self, state: AgentState):
         """A simple scrape search node in the pipeline"""

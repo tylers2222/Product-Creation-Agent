@@ -52,7 +52,7 @@ def add_products_to_vector_db(products: list, database: VectorDb, embedder: Embe
                     id=i+idx,  # Global ID across all batches
                     vector=vector,
                     payload={
-                        "id": product.id,  
+                        "id": product.id,
                         "title": product.title,
                         "body_html": product.body_html,
                         "product_type": product.product_type,
@@ -191,3 +191,43 @@ def shop_svc(draft_product: DraftProduct, shop: Shop) -> DraftResponse:
     # log the draft at info level for an overall check what may have gone wrong very quickly in the final result
     logger.info("Sending Draft", draft=draft_product.model_dump_json())
     return shop.make_a_product_draft(product_listing=draft_product)
+
+
+class ShopifyProductCreateService:
+    def __init__(self, shop: Shop, scraper: Scraper, vector_db: VectorDb, embeddor: Embeddor, llm: LLM, tools: list):
+        self.llm = llm
+        self.shop = shop
+        self.scraper = scraper
+        self.vector_db = vector_db
+        self.embeddor = embeddor
+
+    def query_extract(request_id: str, query: PromptVariant):
+        request_id = state.get("request_id", None)
+        logger.debug("Starting query_extract node for request %s", request_id)
+
+        query_model = state.get("query", None)
+        if query_model is None:
+            logger.error("Query coming in, has a none model", state=state)
+            raise ValueError("Query coming in, has a none model")
+
+        query_model.brand_name = query_model.brand_name.title()
+        query_model.product_name = query_model.product_name.title()
+
+        parser = PydanticOutputParser(pydantic_object=QueryResponse)
+        format_instructions = parser.get_format_instructions()
+        
+        prompt = f"""
+STEP 1: Synthesise the incoming request for google search
+
+If you think {query_model.brand_name} {query_model.product_name}
+Is going to produce the best google results, leave it as is {query_model.brand_name} {query_model.product_name}, otherwise formulate the best string to search
+
+{format_instructions}
+"""
+        llm_response = self.llm.invoke_mini(system_query = None, user_query=prompt)
+        query_response = parser.parse(llm_response)
+
+        logger.debug("query_response: %s", query_response, request_id=request_id)
+        logger.info("Completed query_extract", request_id=request_id)
+
+        

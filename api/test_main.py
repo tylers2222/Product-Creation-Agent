@@ -1,12 +1,16 @@
 import asyncio
 import datetime
+from gzip import READ
 import json
 import time
 from fastapi.testclient import TestClient
+import uvicorn
+from fastapi import FastAPI, Request, Response
+from shopify import Product
 
 from main import create_app
 from api.models.product_generation import PromptVariant
-from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, Option, InventoryAtStores
+from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, Option, InventoryAtStores, ShopifyProductSchema
 from db.client import RedisDatabase
 
 # Create mock data using the PromptVariant structure
@@ -144,8 +148,8 @@ class FakeRedis():
     def __init__(self):
         self.db = {}
 
-    def hget_data(self, database_name: str, key: str):
-        print("Called test redis hget_data")
+    def get_data(self, database_name: str, key: str):
+        print("Called test redis get_data")
         wanted_data = self.db.get(key, None)
         if wanted_data is None:
             raise Exception("Data not in redis")
@@ -153,7 +157,7 @@ class FakeRedis():
 
         print()
         print("*"*60)
-        print("About To Return Data From  Fake hget_data")
+        print("About To Return Data From  Fake get_data")
         print(f"Data's Type: {type(data)}")
         print(f"Data: {data}")
         print()
@@ -175,7 +179,7 @@ def test_read_main():
     print("="*60)
     print("STARTING TEST READ FROM MAIN ROOT")
 
-    client = create_app(agent=fake_agent, job_database=fake_redis)
+    client = create_app(agent=FakeAgent(), job_database=FakeRedis())
 
     response = client.get("/")
     assert response.status_code == 200
@@ -187,7 +191,7 @@ def test_getting_data():
     print("="*60)
     print("STARTING TEST GET A JOBS STATUS")
 
-    test_app = create_app(agent=fake_agent(), job_database=fake_redis(), start_consumer=False)
+    test_app = create_app(agent=FakeAgent(), job_database=FakeAgent(), start_consumer=False)
     with TestClient(test_app) as client:
         response = client.get("/internal/product_generation/325492afdsa")
         assert response is not None
@@ -280,7 +284,7 @@ def integration_test_post():
         while True:
             run_number += 1
 
-            job_data = redis_db.hget_data("agent:jobs", key=request_id)
+            job_data = redis_db.get_data("agent:jobs", key=request_id)
             job_data_dict = json.loads(job_data)
             assert job_data is not None
 
@@ -325,7 +329,7 @@ def integration_test_post():
         while True:
             run_number_2 += 1
 
-            job_data = redis_db.hget_data("agent:jobs", key=request_id_2)
+            job_data = redis_db.get_data("agent:jobs", key=request_id_2)
             job_data_dict = json.loads(job_data)
             assert job_data is not None
 
@@ -374,7 +378,7 @@ def test_sending_same_time():
         while True:
             # Dont shut function down while task is executing
             time.sleep(20)
-            job_status = redis_db.hget_data(database_name="agent:jobs", key=resp_2_req_id)
+            job_status = redis_db.get_data(database_name="agent:jobs", key=resp_2_req_id)
 
             job_status_dict = json.loads(job_status)
             completed = job_status_dict.get("completed")
@@ -383,9 +387,61 @@ def test_sending_same_time():
 
         print("Completed all tasks")
 
+def test_exposing_webhook_for_shopify_webhook():
+    # an integration test to expose a real port
+    # used for a small window
+    # go to shopify and give them your url that is forwarded to this port
+    app = FastAPI()
+
+    @app.get("/")
+    async def greet():
+        print("Recieved get request")
+        return {"Hello": "World"}
+
+    @app.post("/webhook-test")
+    async def get_payload_from_webhook(request: Request):
+        print("="*60)
+        print("Printing Request From Shopify")
+
+        body = await request.json()
+        print(f"\nRequest JSON: \n{json.dumps(body, indent=2)}")
+
+        print(f"\nRequest Headers: {request.headers}")
+        print(f"\nRequest url: {request.url}")
+
+    port = 8080
+    print(f"Starting api on port {port}")
+    uvicorn.run(app=app, host="127.0.0.1", port=port)
+
+def test_exposing_webhook_and_send_to_queue():
+    app = FastAPI()
+
+    @app.post("/webhook-test")
+    async def get_payload_from_webhook(request: Request):
+        print("="*60)
+        print("Returned a webhook response")
+        
+        try:
+            response = await request.json()
+            product_coming_in = ShopifyProductSchema(**response)
+            print(f"Successfully obtained {product_coming_in.title}")
+
+            print(f"Response In Model Format: \n\n{product_coming_in.model_dump_json(indent=3)}")
+
+            return {"response:": "recieved"}
+
+        except Exception as e:
+            print("Error: ", e)
+            print(json.dumps(request.json(), indent=3))
+
+    port=8080
+    uvicorn.run(app=app, host="127.0.0.1", port=port)
+
 if __name__ == "__main__":
     #test_read_main()
     #test_getting_data()
     #test_posting_to_agent()
     #integration_test_post()
-    test_sending_same_time()
+    #test_sending_same_time()
+    #test_exposing_webhook_for_shopify_webhook()
+    test_exposing_webhook_and_send_to_queue()

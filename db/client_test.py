@@ -31,13 +31,13 @@ class integrationtest:
             print("="*60)
             print("STARTING GET")
 
-            job_data = self.db.hget_data(database_name=database_name, key=job_id)
+            job_data = self.db.get_data(database_name=database_name, key=job_id)
 
             print(f"Type Of job_data Response: {type(job_data)}")
             print(f"Job Data: {job_data}")
             
             if deleting_at_end:
-                deleted = self.db.hdel_data(database_name=database_name, key=job_id)
+                deleted = self.db.del_data(database_name=database_name, key=job_id)
 
                 print(f"Type Of deleted Response: {type(job_data)}")
                 print(f"Deleted: {deleted}")
