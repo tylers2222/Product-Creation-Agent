@@ -2,7 +2,6 @@ import logging
 import shopify
 from agents.infrastructure.vector_database.db import vector_database, vector_db
 from agents.infrastructure.vector_database.embeddings import Embeddor, Embeddings
-from agents.agent.services import add_products_to_vector_db
 from agents.infrastructure.shopify_api.client import ShopifyClient, Shop
 
 def send_products_to_vector_database():
@@ -21,7 +20,8 @@ def send_products_to_vector_database():
 
     logging.info("Successfully Finished Obtaining Products")
 
-    db_resp = add_products_to_vector_db(products, database=db, embedder=embeddor, collection_name="shopify_products")
+    # renamed this function to batch something
+    db_resp = batch_products_to_vector_db(products, database=db, embedder=embeddor, collection_name="shopify_products")
     if not db_resp:
         return
 

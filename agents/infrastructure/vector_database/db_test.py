@@ -6,12 +6,18 @@ import logging
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 import traceback
-from .db import vector_database, VectorDb
 import shopify
 from qdrant_client.models import PointStruct
-from .response_schema import DbResponse
 import random
 import datetime
+
+# Add parent directory to Python path so we can import packages
+parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from agents.infrastructure.vector_database.db import vector_database, VectorDb
+from agents.infrastructure.vector_database.response_schema import DbResponse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,13 +28,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True  # Force reconfiguration even if already configured
 )
-
-# Add parent directory to Python path so we can import packages
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-from agents.infrastructure.vector_database.db import vector_database
 from langchain_openai import OpenAIEmbeddings
 
 dummy_shopify_data = [
@@ -237,7 +236,10 @@ class unit_tests:
 class integration_tests:
     def __init__(self) -> None:
         self.fake_vector_db = vector_db = MockVectorDb()
-        self.real_vector_db = vector_db = vector_database()
+
+        vector_db_url = os.getenv("QDRANT_URL")
+        vector_db_api_key = os.getenv("QDRANT_API_KEY")
+        self.real_vector_db = vector_db = vector_database(vector_db_url, vector_db_api_key)
 
     def test_upsert_points(self, collection_name: str, points: list[PointStruct]) -> DbResponse | None:
         print("="*60)
@@ -297,22 +299,36 @@ class integration_tests:
             except Exception as e:
                 print(f"Error Looping Through Points: {e}\n\n{traceback.format_exc()}")
                 return
-# -------------------------------------------------------------------------
-# -------------------------------------------------------------------------
-# -------------------------------------------------------------------------
 
-class concrete_impl_tests:
-    """A class that tests the helper methods of our concrete vector db"""
+    def test_searches_for_product_names(self):
+        """A test gets the result of a vetor search based on product name when the input vector is {brand name} {product name}"""
+        # From the embeddings test script we can save embeds to a json file
+        # We can gitignore them
+        try:
+            with open("product_names_embedded.json", encoding="utf-8") as data:
+                names_and_vectors = json.load(data)
+                print(f"Type Of Loaded In Data: {type(names_and_vectors)}")
 
-    def __init__(self):
-        self.db = vector_database()
-        
-    def test_getting_collection(self):
-        print("="*60)
-        print("STARTING TEST ON GETTING A COLLECTION FROM CONCRETE\n\n")
-        collection_response = self.db.get_collections()
-        #print(f"Dir Of Response: {dir(collection_response)}\n\n")
-        print(f"Length Of Collection: {collection_response.points_count}")
+
+        except FileNotFoundError as f:
+            print(f"ERROR: {f}")
+            print(os.getcwd())
+
+        first_key = list(names_and_vectors.keys())[0]
+        first_value = list(names_and_vectors.values())[0]
+        print("Key Getting Result For: ", first_key)
+        # A test that shows a the response to a singular vector search
+        # Print the results of what came back
+
+        search_points_result = self.real_vector_db.search_points(collection_name="shopify_products", query_vector=first_value, k=10)
+        print("Type: ", type(search_points_result))
+        for result in search_points_result:
+            print()
+            print(result)
+            print()
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
 
 if __name__ == "__main__":
     test_interface = integration_tests()
@@ -320,7 +336,5 @@ if __name__ == "__main__":
     # test_interface.test_invoke_embeddings_documents()
     # test_interface.test_making_shopify_into_qdrant_points()
     # test_interface.test_adding_to_database()
-    test_interface.test_search_points()
-
-    # c = concrete_impl_tests()
-    # c.test_getting_collection()
+    # test_interface.test_search_points()
+    test_interface.test_searches_for_product_names()

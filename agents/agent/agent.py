@@ -6,7 +6,6 @@ import structlog
 from langgraph.graph import START, StateGraph, END
 from qdrant_client.models import PointStruct
 from agents.infrastructure.shopify_api.product_schema import DraftProduct, DraftResponse
-from .schema import ScraperResponse
 from agents.infrastructure.shopify_api.client import Shop
 from agents.infrastructure.firecrawl_api.client import Scraper
 from agents.infrastructure.vector_database.db import VectorDb
@@ -15,12 +14,13 @@ from agents.infrastructure.vector_database.db import vector_database
 from agents.infrastructure.firecrawl_api.client import FirecrawlClient
 from agents.infrastructure.shopify_api.client import ShopifyClient
 from .agent_definitions import synthesis_agent
-from .services import search_products_comprehensive, shop_svc
 from langchain_core.output_parsers import PydanticOutputParser
 from .llm import llm_client, LLM
 from .prompts import PromptVariant, markdown_summariser_prompt
 from .tools import create_all_tools
 from config import create_service_container, ServiceContainer
+
+from services.product_create_service import ShopifyProductCreateService
 
 logger = structlog.get_logger(__name__)
 
@@ -41,10 +41,6 @@ class AgentState(TypedDict):
     shopify_response: DraftResponse
     inventory_filled: bool
 
-# Pydantic models for responses
-class QueryResponse(BaseModel):
-    adapted_search_string: str = Field(description="A new and improved search string to get products on google, otherwise None")
-
 class QuerySynthesis(BaseModel):
     web_scraped_data: ScraperResponse
     similar_products: list[PointStruct]
@@ -63,11 +59,8 @@ class ShopifyProductWorkflow:
         logger.debug("Inititalising ShopifyProductWorkflow class")
 
         self.workflow = StateGraph(AgentState)
-        self.llm = llm
-        self.shop = shop
-        self.scraper = scraper
-        self.vector_db = vector_db
-        self.embeddor = embeddor
+        self.product_create_service = ShopifyProductCreateService(shop=shop, scraper=scraper, vector_db=vector_db, embeddor=embeddor, llm=llm)
+
         self.agent = synthesis_agent(tools=tools)
 
         self.workflow.add_node("query_extract", self.query_extract)
@@ -89,7 +82,16 @@ class ShopifyProductWorkflow:
         logger.info("Successfully initialised ShopifyProductWorkflow class")
 
     def query_extract(self, state: AgentState):
+        request_id = state.get("request_id", None)
+        if request_id is None:
+            logger.error("No request id retrieved", state=state)
+            raise ValueError("No request id retrieved")
         
+        query = state.get("query", None)
+        if query is None:
+            logger.error("No Query schema recieved", state=state)
+
+        query_response = self.product_create_service.query_extract(request_id, query)
         return {
             "adapted_search_string": query_response.adapted_search_string,
         }

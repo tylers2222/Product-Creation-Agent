@@ -1,4 +1,3 @@
-
 from langchain.tools import tool
 import structlog
 from dataclasses import dataclass

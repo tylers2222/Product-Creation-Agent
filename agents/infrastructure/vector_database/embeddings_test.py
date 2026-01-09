@@ -1,13 +1,19 @@
 import json
 import random
 import os
+import sys
 from dotenv import load_dotenv
 import traceback
 
+# Add parent directory to Python path so we can import packages
+parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from agents.infrastructure.vector_database.embeddings import Embeddor, Embeddings
+
 os.chdir("..")
 load_dotenv()
-
-from .embeddings import Embeddor, Embeddings
 
 test_documents = {
     "test_1": {
@@ -16,7 +22,6 @@ test_documents = {
         "wanted_result": 10
     } 
 }
-
 
 class MockEmbeddor:
     def __init__(self):
@@ -50,13 +55,13 @@ class IntegrationTest:
     def __init__(self) -> None:
         self.client: Embeddor = Embeddings()
 
-    def embed_documents(self):
+    def test_embed_documents(self):
         print("="*60)
         print(f"Testing -> {test_documents["test_1"]["description"]}")
         result = self.client.embed_documents(documents=test_documents["test_1"]["test"])
         print(f"Result: \n\n{result[:5]}")
 
-    def embed_document_and_write_to_file(self):
+    def test_embed_document_and_write_to_file(self):
         """A helping testing to assist searching in the database test script"""
         print("="*60)
         print("Testing -> Writing a real embed to file")
@@ -79,8 +84,25 @@ class IntegrationTest:
 
         except Exception as e:
             print(f"Error writing to file: {e} ->\n\n{traceback.format_exc()}")
+    
+    def test_embedding_some_product_names(self):
+        products = ["Ultra Pure Creatine", "Creatine +", "Micronized Creatine"]
+        embed_result = self.client.embed_documents(products)
+
+        final_json_result = {}
+        for idx, embed in enumerate(embed_result):
+            product = products[idx]
+            print(f"Adding {product} to result")
+            final_json_result[product] = embed
+
+        path = "vector_database/product_names_embedded.json"
+        with open(path, "w") as f:
+            json.dump(final_json_result, f, indent=3)
+            print(f"Written file to path: {path}")
+
 
 if __name__ == "__main__":
     ut = UnitTests()
     it = IntegrationTest()
-    it.embed_document_and_write_to_file()
+    #it.test_embed_document_and_write_to_file()
+    it.test_embedding_some_product_names()
