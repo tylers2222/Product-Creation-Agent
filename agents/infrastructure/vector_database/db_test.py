@@ -1,15 +1,13 @@
+import inspect
 import json
 import os
-from pydoc import describe
 import sys
 import logging
-from dotenv import load_dotenv
-from langchain_core.documents import Document
-import traceback
-import shopify
-from qdrant_client.models import PointStruct
 import random
-import datetime
+import traceback
+from qdrant_client.models import PointStruct
+import shopify
+from dotenv import load_dotenv
 
 # Add parent directory to Python path so we can import packages
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -17,7 +15,10 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from agents.infrastructure.vector_database.db import vector_database, VectorDb
+from agents.infrastructure.vector_database.embeddings import Embeddings
 from agents.infrastructure.vector_database.response_schema import DbResponse
+from agents.infrastructure.vector_database.schema import VectorFilter
+from agents.infrastructure.vector_database.db_mock import MockVectorDb, points_tests
 
 # Load environment variables from .env file
 load_dotenv()
@@ -28,7 +29,15 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True  # Force reconfiguration even if already configured
 )
-from langchain_openai import OpenAIEmbeddings
+
+# Silence noisy third-party libraries by completely disabling their handlers
+for lib in ["openai", "langchain", "langchain_openai", "httpx", "httpcore", "urllib3", "qdrant_client"]:
+    logger = logging.getLogger(lib)
+    logger.setLevel(logging.CRITICAL + 1)
+    logger.propagate = False
+    # Remove all existing handlers and add a NullHandler
+    logger.handlers = []
+    logger.addHandler(logging.NullHandler())
 
 dummy_shopify_data = [
     {
@@ -135,78 +144,9 @@ product5.tags = "probiotics, digestive health, gut health, immune support, micro
 
 dummy_shopify_data_in_shopify_class = [product1, product2, product3, product4, product5]
 
-
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
-
-points_tests = {
-    "test_1": {
-        "description": "A successful test with random ints as the vector mock",
-        "points": [
-            PointStruct(
-                id=i,
-                vector=[random.randint(-3, 3) for _ in range(10)],
-                payload={"id": random.random()}
-            ) for i in range(5)
-        ]
-    }
-}
-
-# -------------------------------------------------------------------------
-# -------------------------------------------------------------------------
-# -------------------------------------------------------------------------
-
-class MockVectorDb:
-    def __init__(self):
-        self.points = []
-        self.seen = {}
-        self.upsert_call_count = 0
-
-    def upsert_points(self, collection_name: str, points: list[PointStruct]) -> DbResponse | None:
-        print("="*60)
-        print("Called: MockVectorDb.upsert_points")
-        self.points.extend(points)
-        self.upsert_call_count += 1
-
-        points_dict = [point.payload["id"] for point in points_tests["test_1"]["points"]]
-        print(f"Points Dict In Upsert Function: {points_dict}")
-
-        for idx, point in enumerate(points_tests["test_1"]["points"]):
-            print(f"Starting Index {idx}")
-
-            payload = point.payload
-            assert(payload is not None)
-
-            id_payload = payload.get("id", {})
-            assert(id_payload is not None)
-            assert(id_payload != "")
-            print(f"ID Payload: {id_payload}\n")
-
-            seen_before = self.seen.get(f"{id_payload}", {})
-            if seen_before:
-                print(f"ERROR: Idx {id_payload} has already been added\n\n")
-                print(json.dumps(self.seen, indent=3))
-                return None
-
-            self.seen[id_payload] = 1
-
-        # print(f"\n\n{json.dumps(self.seen, indent=3)}\n\n")
-
-        print("MockVectorDb.upsert_points returned DbResponse")
-        return DbResponse(
-            records_inserted=len(points),
-            collection_name=collection_name,
-            time=datetime.datetime.now(),
-            error=None,
-            traceback=None
-        )
-    
-    def search_points(self, collection_name: str, query_vector: list[float], k: int) -> list:
-        # Simple fake: return first k points
-        print("="*60)
-        print(f"MockVectorDb.search_points returned {k} points")
-        return self.points[:k]
 
 class unit_tests:
     def __init__(self):
@@ -241,6 +181,11 @@ class integration_tests:
         vector_db_api_key = os.getenv("QDRANT_API_KEY")
         self.real_vector_db = vector_db = vector_database(vector_db_url, vector_db_api_key)
 
+        self.embeddor = Embeddings()
+
+        self.collection_name_og = "shopify_products"
+        self.collection_name_test_one = "shopify_products-latest"
+
     def test_upsert_points(self, collection_name: str, points: list[PointStruct]) -> DbResponse | None:
         print("="*60)
         print("STARTING AN INTEGRATION TEST FOR UPSERTING VECTOR DB POINTS\n\n")
@@ -248,7 +193,7 @@ class integration_tests:
 
         points = points_tests["test_1"]["points"]
 
-        db_response = self.real_vector_db.upsert_points(collection_name="shopify_products", points=points)
+        db_response = self.real_vector_db.upsert_points(collection_name=self.collection_name_og, points=points)
         assert(db_response is not None)
         assert(db_response.error is None)
         assert(db_response.records_inserted == len(points))
@@ -275,7 +220,7 @@ class integration_tests:
 
         k = 3
 
-        search_points_result = self.real_vector_db.search_points(collection_name="shopify_products", query_vector=embedding, k=k)
+        search_points_result = self.real_vector_db.search_points(collection_name=self.collection_name_og, query_vector=embedding, k=k)
         print(f"Response Type: {type(search_points_result)}")
         # print(f"Dir: {dir(search_points_result)}")
         assert(len(search_points_result) == k)
@@ -300,12 +245,36 @@ class integration_tests:
                 print(f"Error Looping Through Points: {e}\n\n{traceback.format_exc()}")
                 return
 
+    def test_creating_index_on_a_collection(self):
+        """
+        Testing
+        1) Creating a collection
+        2) Putting an index in that collection
+        3) deleting the collection
+        """
+        print("="*60)
+        print("Starting ", inspect.stack()[0][3])
+        collection_name = "shopify_products-latest"
+        collection_created = self.real_vector_db.create_collection(
+            collection_name=collection_name, 
+            index_payload=True, 
+            index_wanted="vendor")
+        assert collection_created
+
+        #time.sleep(15)
+        #deleted = self.real_vector_db.delete_collection(collection_name=collection_name)
+        #assert deleted
+        print("Completed ", inspect.stack()[0][3])
+
     def test_searches_for_product_names(self):
-        """A test gets the result of a vetor search based on product name when the input vector is {brand name} {product name}"""
+        """
+        A test gets the result of a vetor search based on product name when the input vector is {brand name} {product name}
+        Results should be something like 80% similarity
+        """
         # From the embeddings test script we can save embeds to a json file
         # We can gitignore them
         try:
-            with open("product_names_embedded.json", encoding="utf-8") as data:
+            with open("embed_data/product_names_embedded.json", encoding="utf-8") as data:
                 names_and_vectors = json.load(data)
                 print(f"Type Of Loaded In Data: {type(names_and_vectors)}")
 
@@ -317,15 +286,138 @@ class integration_tests:
         first_key = list(names_and_vectors.keys())[0]
         first_value = list(names_and_vectors.values())[0]
         print("Key Getting Result For: ", first_key)
-        # A test that shows a the response to a singular vector search
+        # A test  that shows a the response to a singular vector search
         # Print the results of what came back
 
-        search_points_result = self.real_vector_db.search_points(collection_name="shopify_products", query_vector=first_value, k=10)
+        search_points_result = self.real_vector_db.search_points(
+            collection_name=self.collection_name_og,
+            query_vector=first_value, 
+            k=10)
+
         print("Type: ", type(search_points_result))
         for result in search_points_result:
             print()
             print(result)
             print()
+
+    def test_search_brand_and_product(self):
+        """
+        Searching by brand and product without a filter
+        """
+        print("="*60)
+        print("STARTING: ", inspect.stack()[0][3])
+
+        search_string = "Vitamin D3"
+        search_document = self.embeddor.embed_documents([search_string])
+
+        result_documents = self.real_vector_db.search_points(
+            collection_name=self.collection_name_test_one,
+            query_vector=search_document[0],
+            k=10)
+
+        for result in result_documents:
+            print()
+            print(result)
+            print()
+
+
+    def test_search_brand_and_product_with_filter(self):
+        """
+        Searching by brand and product as the name, with a filter to the brand
+        Analysing edge case where your brand name actually changes in an Ai re-do, this could be a problem
+
+        Single test to check the result querying the db
+        """
+
+        real_product_title = "A.Vogel Liver Support"
+        print("="*60)
+        print("Searching vector db for: ", real_product_title)
+        mock_refined_product_title = "A.Vogel Liver Support Capsules"
+        print("Testing Query String: ", mock_refined_product_title)
+
+        documents_needing_embed = [mock_refined_product_title]
+
+        result_embed = self.embeddor.embed_documents(documents=documents_needing_embed)[0]
+
+        vector_filter = VectorFilter(
+            key = "vendor",
+            value = "A.Vogel"
+        )
+
+        search_points_result = self.real_vector_db.search_points(
+            collection_name=self.collection_name_test_one, 
+            query_vector=result_embed, 
+            vector_filter=vector_filter)
+
+        print("Type: ", type(search_points_result))
+        for result in search_points_result:
+            print()
+            print(result)
+            print()
+
+    def test_multiple_vector_searches(self):
+        """
+        Testing a suite of documents
+
+        As part of the product generation agent that documents results of searching documents
+        """
+
+        print("="*60)
+        print("STARTING ", inspect.stack()[0][3])
+
+        tests = [
+            {
+                "test_document": "2Die4 Live Foods Activated Organic Almonds 500g",
+                "real_document": "2Die4 Live Foods Activated Organic Almonds",
+                "description": "A different product with the similar naming conventions until the type of nut"
+            },
+            {
+                "test_document": "A.Vogel Echinacea Forte",
+                "real_document": "A.Vogel Echinacea Toothpaste",
+                "description": "Different products that are different until the end word"
+            },
+            {
+                "test_document": "Absolute Essential Certified Organic Immune Care Essential Oil Blend",
+                "real_document": "Absolute Essential Certified Organic Inhale Essential Oil Blend",
+                "description": "Different Oil blend mid name"
+            },
+            {
+                "test_document": "Activated Probiotics Biome Eczema Probiotics",
+                "real_document": "Activated Probiotics Biome Eczema Probiotic",
+                "description": "Changed the product name to plurals"
+            },
+            {
+                "test_document": "Micronutrition Vitamin D3 2000IU",
+                "real_document": "Micronutrition Vitamin D3 1000IU",
+                "description": "A concrete different product stores might want, although a varaint structure can achieved here"
+            },
+        ]
+
+        for test in tests:
+            # Loop through the tests
+            test_document = test["test_document"]
+            real_document = test["real_document"]
+            vector = self.embeddor.embed_documents([test_document])
+            return_documents = self.real_vector_db.search_points(
+                collection_name=self.collection_name_test_one, 
+                query_vector=vector[0], 
+                k=10) 
+            
+            found = False
+            for return_document in return_documents:
+                # Loop through the returned results as a similarity search to the test_documetn
+                payload = return_document.payload
+                title = payload["title"]
+
+                if title == real_document:
+                    # title is equal to the document we wanna test for 
+                    # print the result
+                    found = True
+                    test["score"] = return_document.score
+                    print(json.dumps(test, indent=3))
+            
+            if not found:
+                logging.warning("%s couldnt be found when looking for %s", real_document, test_document)
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
@@ -334,7 +426,10 @@ if __name__ == "__main__":
     test_interface = integration_tests()
     # test_interface.invoke_embeddings_text()
     # test_interface.test_invoke_embeddings_documents()
+    #test_interface.test_creating_index_on_a_collection()
     # test_interface.test_making_shopify_into_qdrant_points()
     # test_interface.test_adding_to_database()
     # test_interface.test_search_points()
-    test_interface.test_searches_for_product_names()
+    #test_interface.test_searches_for_product_names()
+    #test_interface.test_search_brand_and_product()
+    test_interface.test_multiple_vector_searches()

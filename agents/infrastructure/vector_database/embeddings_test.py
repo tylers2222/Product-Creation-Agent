@@ -11,6 +11,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from agents.infrastructure.vector_database.embeddings import Embeddor, Embeddings
+from agents.infrastructure.vector_database.embeddings_mock import MockEmbeddor
 
 os.chdir("..")
 load_dotenv()
@@ -21,25 +22,10 @@ test_documents = {
         "test": ["Tyler is a software engineer", "Sarah loves playing guitar", "The quick brown fox jumps over the lazy dog", "Machine learning transforms data into insights", "Coffee fuels productivity and creativity", "Python is a versatile programming language", "Mountains provide breathtaking views", "Reading books expands your knowledge", "Exercise improves both physical and mental health", "Music has the power to change moods"],
         "wanted_result": 10
     } 
-}
-
-class MockEmbeddor:
-    def __init__(self):
-        self.callback = 0
-
-    def embed_documents(self, documents: list[str]) -> list[list[float]] | None:
-        print("="*60)
-        print("Called: MockedEmbeddor.embed_documents")
-        self.callback += 1
-        embeds: list = []
-        for document in documents:
-            embeds.append([random.randint(-3, 3) for i in range (15)])
-
-        print("MockedEmbeddor.embed_documents returned embeds")
-        return embeds
-        
+}       
 
 class UnitTests:
+    """Unit tests for the embeddings package"""
     def __init__(self) -> None:
         self.embeddor: Embeddor = MockEmbeddor()
 
@@ -77,7 +63,7 @@ class IntegrationTest:
         }
 
         try:
-            with open("vector_database/singe_document_embed.json", "w") as f:
+            with open("vector_database/singe_document_embed.json", "w", encoding="utf-8") as f:
                 json.dump(file_content, f, indent=3)
 
             print("File written to successfully")

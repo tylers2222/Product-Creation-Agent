@@ -17,7 +17,7 @@ class Embeddings:
         )
 
     def embed_documents(self, documents: list[str]) -> list[list[float]] | None:
-        logger.debug("Starting embed_documents", documents=documents)
+        logger.debug("Starting embed_documents", documents=documents[:15])
 
         try:
             embeddings = self.client.embed_documents(texts=documents)
