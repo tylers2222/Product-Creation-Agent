@@ -105,8 +105,28 @@ class DraftResponse(BaseModel):
 
 
 class ShopifyProductSchema(BaseModel):
-   body_html:       str
-   id:              int
-   title:           str
-   product_type:    str
-   tags:            str
+    body_html:       str
+    id:              int
+    title:           str
+    product_type:    str
+    tags:            str
+
+class Fields(BaseModel):
+    """Specify tags for obtaining shopify products"""
+    id:             bool | None = None
+    title:          bool | None = None
+    body_html:      bool | None = None
+    category:       bool | None = None
+    vendor:         bool | None = None
+    product_type:   bool | None = None
+    collections:    bool | None = None
+    tags:           bool | None = None
+    status:         bool | None = None
+
+    def shopify_transform_fields(self) -> str:
+        """Shopify require a string in a specific format"""
+        result = ""
+        for field in self.model_fields_set:
+            result += f"{field}, "
+
+        return result.strip()[:-1]

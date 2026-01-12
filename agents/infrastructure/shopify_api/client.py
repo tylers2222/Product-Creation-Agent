@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 import requests
 from typing import Literal, Protocol
-from .product_schema import DraftProduct, DraftResponse
+from .product_schema import DraftProduct, DraftResponse, Fields
 from .schema import Inventory, Inputs
 from .exceptions import ShopifyError
 import sys
@@ -20,7 +20,7 @@ class Shop(Protocol):
     def make_a_product_draft(self, product_listing: DraftProduct) -> DraftResponse:
         ...
 
-    def get_products_from_store(self):
+    def get_products_from_store(self, fields: Fields | None = None) -> list:
         ...
 
     def fill_inventory(self, inventory_data: Inventory):
@@ -44,7 +44,7 @@ class Locations(BaseModel):
 
 class ShopifyClient:
     def __init__(self, api_key: str, api_secret: str, token: str, shop_url: str, shop_name: str, locations: Locations):
-        logger.info("Initialising Shopify Client...")
+        logger.debug("Initialising Shopify Client...")
         self.api_key = api_key
         self.api_secret = api_secret
         self.access_token = token
@@ -299,10 +299,17 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
 
         return True
 
-    def get_products_from_store(self):
+    def get_products_from_store(self, fields: Fields | None = None) -> list:
         try:
             all_products = []
-            products = shopify.Product.find(limit=250, fields="id,title,body_html,product_type,tags")
+
+            logger.debug("Sending with fields", fields=fields)
+            if fields is not None:
+                fields_string = fields.shopify_transform_fields()
+                products = shopify.Product.find(limit=250, fields=fields_string)
+            else :
+                products = shopify.Product.find(limit=250)
+
             if not products:
                 logger.error("Products is None", exc_info=True)
                 return None

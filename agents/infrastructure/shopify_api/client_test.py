@@ -1,11 +1,10 @@
 import random
 import traceback
-from dotenv import load_dotenv
 import os
 import sys
 import inspect
-import datetime
 
+from dotenv import load_dotenv
 # Add parent directories to Python path so we can import packages
 # Go up from shopify_api -> infrastructure -> agents -> Product generating agent
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,8 +21,7 @@ from agents.infrastructure.shopify_api.client import ShopifyClient, Shop, Locati
 from agents.infrastructure.shopify_api.product_schema import DraftResponse, Variant, DraftProduct, InventoryAtStores, Option
 from agents.infrastructure.shopify_api.exceptions import ShopifyError
 from agents.infrastructure.shopify_api.schema import Inventory, Inputs
-
-load_dotenv()
+from agents.infrastructure.shopify_api.mock import MockShop
 
 dummy_variant = Variant(
     option1_value=Option(option_name="Size", option_value="500g"),
@@ -363,25 +361,9 @@ mock_inventory_request = Inventory(
 # ----------------------------------------------------------------------------------------------------------
 # ----------------------------------------------------------------------------------------------------------
 
-class MockShop:
-    def __init__(self) -> None:
-        pass
-
-    def make_a_product_draft(self, shop_name: str, product_listing: DraftProduct) -> DraftResponse:
-        print("="*60)
-        print("Called: MockShop.make_a_product")
-        if len(product_listing.variants) == 0:
-            raise ShopifyError("No proposed variants")
-
-        print("MockShop.make_a_product returned DraftResponse")
-        return DraftResponse(
-            title = product_listing.title,
-            url = f"https://admin.shopify.com/store/{shop_name}/products/5327895723",
-            time_of_comepletion = datetime.datetime.now(),
-            status_code = 200,
-        )
 
 class UnitTests():
+    """Unit tests for the shopify package"""
     def __init__(self) -> None:
         self.client: Shop = MockShop()
         self.test_1_option = DraftProductWith1Option()
@@ -488,8 +470,11 @@ class IntegrationTests:
         if not res:
             print("No result")
             return
-        print(f"Result: \n\n{res[:25]}")
+        # got this just a random number
+        product_three = res[3].to_dict()
         print(f"\nJson Of A Product: \n\n {res[3].to_dict()}")
+        for key in product_three.keys():
+            print(key)
         print(f"Type: {type(res[3])}")
         print("="*60)
 
@@ -501,7 +486,7 @@ class IntegrationTests:
 
 if __name__ == "__main__":
     integration = IntegrationTests()
-    #integration.test_get_products_from_store()
+    integration.test_get_products_from_store()
     #integration.test_make_a_product_draft()
     #integration.test_DraftProductWithMultipleVariantsAndMultipleSubVariants()
     #integration.test_real_instance()
