@@ -9,6 +9,7 @@ import uuid
 from agents.agent.agent import ShopifyProductWorkflow
 from agents.agent.prompts import format_product_input, PromptVariant
 from agents.infrastructure.shopify_api.product_schema import Option, Variant, InventoryAtStores
+from factory import ServiceContainer, build_service_container
 
 
 # -----------------------------------------------------------------------------
@@ -43,27 +44,15 @@ def sample_prompt_variant():
 @pytest.fixture
 def workflow_with_mocks(mock_shop, mock_scraper, mock_vector_db, mock_embeddor, mock_llm):
     """Create a ShopifyProductWorkflow with all mock dependencies."""
-    from config import ServiceContainer
-    from agents.agent.tools import create_all_tools
-
-    # Create a service container with mocks for tools
-    sc = ServiceContainer(
+    container = ServiceContainer(
         shop=mock_shop,
         scraper=mock_scraper,
         vector_db=mock_vector_db,
         embeddor=mock_embeddor,
         llm=mock_llm
     )
-    tools = create_all_tools(sc)
 
-    return ShopifyProductWorkflow(
-        shop=mock_shop,
-        scraper=mock_scraper,
-        vector_db=mock_vector_db,
-        embeddor=mock_embeddor,
-        llm=mock_llm,
-        tools=tools
-    )
+    return ShopifyProductWorkflow(container=container)
 
 
 # -----------------------------------------------------------------------------
@@ -114,20 +103,8 @@ class TestShopifyProductWorkflowIntegration:
     @pytest.fixture
     def integration_workflow(self):
         """Create a workflow with real service dependencies."""
-        from config import create_service_container
-        from agents.agent.tools import create_all_tools
-
-        sc = create_service_container()
-        tools = create_all_tools(sc)
-
-        return ShopifyProductWorkflow(
-            shop=sc.shop,
-            scraper=sc.scraper,
-            vector_db=sc.vector_db,
-            embeddor=sc.embeddor,
-            llm=sc.llm,
-            tools=tools
-        )
+        container = build_service_container()
+        return ShopifyProductWorkflow(container=container)
 
     @pytest.mark.asyncio
     async def test_service_workflow_runs(self, integration_workflow, sample_prompt_variant):

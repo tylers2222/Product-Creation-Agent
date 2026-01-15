@@ -6,8 +6,7 @@ Integration tests require real service dependencies and API keys.
 import pytest
 from qdrant_client.models import PointStruct
 
-from agents.agent.agent_definitions import synthesis_agent
-from agents.agent.tools import create_all_tools, ServiceContainer
+from factory import ServiceContainer, build_service_container, build_synthesis_agent
 
 
 # -----------------------------------------------------------------------------
@@ -79,25 +78,8 @@ class TestSynthesisAgentIntegration:
     @pytest.fixture
     def integration_agent(self):
         """Create a synthesis agent with real service dependencies."""
-        from agents.infrastructure.vector_database.embeddings import Embeddings
-        from agents.infrastructure.vector_database.db import vector_database
-        from agents.infrastructure.firecrawl_api.client import FirecrawlClient
-        from agents.infrastructure.shopify_api.client import ShopifyClient
-        from agents.agent.llm import llm_client
-        import os
-        from dotenv import load_dotenv
-
-        load_dotenv()
-
-        sc = ServiceContainer(
-            vector_db=vector_database(),
-            embeddor=Embeddings(),
-            scraper=FirecrawlClient(api_key=os.getenv("FIRECRAWL_API_KEY")),
-            shop=ShopifyClient(),
-            llm=llm_client()
-        )
-        tools = create_all_tools(sc)
-        return synthesis_agent(tools)
+        container = build_service_container()
+        return build_synthesis_agent(container)
 
     def test_synthesis_agent_invokes_successfully(
         self, integration_agent, sample_wrong_vector_results

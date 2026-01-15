@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from qdrant_client.models import PointStruct, ScoredPoint
 
-from config import create_mock_service_container
+from factory import build_mock_service_container
 
 from agents.infrastructure.shopify_api.mock import MockShop
 from agents.infrastructure.firecrawl_api.mock import MockScraperClient
@@ -98,7 +98,7 @@ def mock_llm():
 
 @pytest.fixture
 def mock_service_container():
-    return create_mock_service_container()
+    return build_mock_service_container()
 
 # -----------------------------------------------------------------------------
 # Sample Test Data Fixtures

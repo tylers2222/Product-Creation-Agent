@@ -19,6 +19,10 @@ class TestMockShopifyProductCreateService:
         """Create service instance with mock dependencies."""
         return ShopifyProductCreateService(sc=mock_service_container, tools=None)
 
+    #--------------------------------------------------------
+    # Query Extract Node
+    #--------------------------------------------------------
+
     def test_query_extract(self, workflow, tc_query_extract):
         """
         Test query extraction reformulates search query.
@@ -41,6 +45,10 @@ class TestMockShopifyProductCreateService:
         # Assert the query was modified (brand/product names title-cased in the function)
         assert tc.data["query"].brand_name == tc.expected["brand_name_title_cased"]
         assert tc.data["query"].product_name == tc.expected["product_name_title_cased"]
+
+    #--------------------------------------------------------
+    # Query Already Exists Node
+    #--------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_check_if_product_already_exists_found_by_sku(
@@ -110,3 +118,16 @@ class TestMockShopifyProductCreateService:
 
         if not tc.expected["product_exists"]:
             assert result is None
+
+    
+    #--------------------------------------------------------
+    # Query Scrape Node
+    #--------------------------------------------------------
+
+    def test_scrape(self, workflow):
+        scraper_response = workflow.query_scrape(query="Optimum Nutrition Creatine +")
+        assert scraper_response is not None
+        assert isinstance(scraper_response, BaseModel)
+        assert len(scraper_response.result) > 0
+
+    

@@ -13,12 +13,10 @@ from agents.infrastructure.vector_database.embeddings import Embeddor, Embedding
 from agents.infrastructure.vector_database.db import vector_database
 from agents.infrastructure.firecrawl_api.client import FirecrawlClient
 from agents.infrastructure.shopify_api.client import ShopifyClient
-from .agent_definitions import synthesis_agent
 from langchain_core.output_parsers import PydanticOutputParser
 from .llm import llm_client, LLM
 from .prompts import PromptVariant, markdown_summariser_prompt
-from .tools import create_all_tools
-from config import create_service_container, ServiceContainer
+from factory import build_service_container, ServiceContainer, build_synthesis_agent, build_all_tools
 
 from services.product_create_service import ShopifyProductCreateService
 from services.internal.vector_db import product_similarity_threshold_svc
@@ -43,27 +41,29 @@ class AgentState(TypedDict):
     shopify_response: DraftResponse
     inventory_filled: bool
 
-class QuerySynthesis(BaseModel):
-    web_scraped_data: ScraperResponse
-    similar_products: list[PointStruct]
-
-class VectorRelevanceResponse(BaseModel):
-    relevance_score: int
-    matches: int
-    total: int
-    action_taken: str
-    reasoning: str
-    similar_products: list[dict]
-
 # Main LLM Client Class
 class ShopifyProductWorkflow:
-    def __init__(self, shop: Shop, scraper: Scraper, vector_db: VectorDb, embeddor: Embeddor, llm: LLM, tools: list):
+    def __init__(self, container: ServiceContainer):
+        """
+        Initialize the Shopify product workflow.
+
+        Args:
+            container: ServiceContainer with all dependencies
+        """
         logger.debug("Inititalising ShopifyProductWorkflow class")
 
-        self.workflow = StateGraph(AgentState)
-        self.product_create_service = ShopifyProductCreateService(shop=shop, scraper=scraper, vector_db=vector_db, embeddor=embeddor, llm=llm, tools=tools)
+        # Store dependencies from container
+        self.shop = container.shop
+        self.scraper = container.scraper
+        self.vector_db = container.vector_db
+        self.embeddor = container.embeddor
+        self.llm = container.llm
 
-        self.agent = synthesis_agent(tools=tools)
+        self.workflow = StateGraph(AgentState)
+        self.product_create_service = ShopifyProductCreateService(sc=container, tools=None)
+
+        # Build synthesis agent using factory
+        self.agent = build_synthesis_agent(container)
 
         self.workflow.add_node("query_extract", self.query_extract)
         self.workflow.add_node("query_scrape", self.query_scrape)
@@ -120,20 +120,8 @@ class ShopifyProductWorkflow:
         request_id = state.get("request_id", None)
         logger.debug("Started query_synthesis node", request_id=request_id if request_id else "Unknown")
 
-        # Step 1: Handle markdown summarization
-        web_data = state.get("web_scraped_data", None)
-        if web_data is None:
-            logger.error("No web data returned", request_id=request_id if request_id else "Unknown")
-            raise Exception("No web data returned")
-        
-        summarisations_needed = web_data.markdowns_needings_summarisation()
-        for needed in summarisations_needed:
-            result = self.llm.invoke_mini(user_query=markdown_summariser_prompt(title=web_data.query, markdown=needed["markdown"]))
-            logger.info(f"Summarized markdown at index {needed['idx']}", request_id=request_id if request_id else "Unknown")
-            web_data.result[needed["idx"]] = result
-        
         similar_products = state["similar_products"]
-        target_info = web_data.query
+        target_info = state["adapted_search_string"]
         logger.debug("Similar Products: %s", similar_products, request_id=request_id if request_id else "Unknown")
         logger.debug("Query Wanting Similar Products For: %s", target_info, request_id=request_id if request_id else "Unknown")
         similar_products_simple = [
@@ -314,12 +302,16 @@ Then use the SAME style for your product.
         return result.get("shopify_response", None)
 
 def create_agent() -> ShopifyProductWorkflow:
+    """
+    Factory function to create a fully-configured ShopifyProductWorkflow.
+
+    Returns:
+        ShopifyProductWorkflow with all dependencies injected
+    """
     try:
-        sc = create_service_container()  # Call the function!
-        tools = create_all_tools(sc)
+        container = build_service_container()
+        return ShopifyProductWorkflow(container=container)
 
-        return ShopifyProductWorkflow(shop=sc.shop, scraper=sc.scraper, vector_db=sc.vector_db, embeddor=sc.embeddor, llm=sc.llm, tools=tools)
-
-    except AttributeError as a:
-        logger.error("Service Container: %s", sc.to_json())
-        raise AttributeError(a)
+    except AttributeError as e:
+        logger.error("Failed to create agent", error=str(e))
+        raise
