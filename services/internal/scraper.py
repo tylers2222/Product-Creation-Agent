@@ -1,7 +1,7 @@
 import logging
 
 from agents.infrastructure.firecrawl_api.client import Scraper
-from agents.agent.schema import ScraperResponse, ProcessedResult
+from models.scraper_response import ScraperResponse, ProcessedResult
 from agents.agent.llm import LLM, markdown_summariser
 
 logger = logging.getLogger(__name__)

@@ -20,3 +20,11 @@ class Inventory(BaseModel):
     # example our internal inventory db
     # or route to admin acc on GUI for inventory input
         
+class Product(BaseModel):
+    "Product dict that holds title"
+    title: str
+
+class SkuSearchResponse(BaseModel):
+    """Search response from shopify's graph ql"""
+    sku: str
+    product: Product

@@ -32,7 +32,7 @@ class Variant(BaseModel):
     compare_at: float | None = None
     product_weight: float
 
-    inventory_at_stores: InventoryAtStores | None = Field(description="If no inventory updates needed at time of request can be none")
+    inventory_at_stores: InventoryAtStores | None = None
 
 
 class DraftProduct(BaseModel):
@@ -104,12 +104,78 @@ class DraftResponse(BaseModel):
     status_code: int | None
 
 
+# ------------------------------------------------------------------
+# Converting Shopify's terrible resource return into pydantic model
+# ------------------------------------------------------------------
+
+
+class ShopifyVariantSchema(BaseModel):
+    """Pydantic model for a Shopify variant retrieved from the store."""
+    id: int | None
+    product_id: int | None
+    title: str | None
+    price: str | None
+    sku: str | None = None
+    barcode: str | None = None
+    position: int
+    inventory_item_id: int | None = None
+    option1: str | None = None
+    option2: str | None = None
+    option3: str | None = None
+    weight: float | None = None
+    weight_unit: str | None = None
+
+    @classmethod
+    def from_shopify_resource(cls, resource) -> "ShopifyVariantSchema":
+        """Convert a shopify.Variant resource to a Pydantic model."""
+        return cls(
+            id=resource.id,
+            product_id=getattr(resource, "product_id", None),
+            title=resource.title,
+            price=resource.price,
+            sku=getattr(resource, 'sku', None),
+            barcode=getattr(resource, 'barcode', None),
+            position=resource.position,
+            inventory_item_id=getattr(resource, 'inventory_item_id', None),
+            option1=getattr(resource, 'option1', None),
+            option2=getattr(resource, 'option2', None),
+            option3=getattr(resource, 'option3', None),
+            weight=getattr(resource, 'weight', None),
+            weight_unit=getattr(resource, 'weight_unit', None),
+        )
+
+
 class ShopifyProductSchema(BaseModel):
-    body_html:       str
-    id:              int
-    title:           str
-    product_type:    str
-    tags:            str
+    """Pydantic model for a Shopify product retrieved from the store."""
+    id: int | None
+    title: str | None
+    body_html: str | None = None
+    vendor: str | None = None
+    product_type: str | None = None
+    tags: str | None = None
+    status: str | None = None
+    variants: List[ShopifyVariantSchema] = Field(default_factory=list)
+
+    @classmethod
+    def from_shopify_resource(cls, resource) -> "ShopifyProductSchema":
+        """Convert a shopify.Product resource to a Pydantic model."""
+        variants = []
+        if hasattr(resource, 'variants') and resource.variants:
+            variants = [
+                ShopifyVariantSchema.from_shopify_resource(v)
+                for v in resource.variants
+            ]
+
+        return cls(
+            id=resource.id,
+            title=resource.title,
+            body_html=getattr(resource, 'body_html', None),
+            vendor=getattr(resource, 'vendor', None),
+            product_type=getattr(resource, 'product_type', None),
+            tags=getattr(resource, 'tags', None),
+            status=getattr(resource, 'status', None),
+            variants=variants,
+        )
 
 class Fields(BaseModel):
     """Specify tags for obtaining shopify products"""
@@ -130,3 +196,7 @@ class Fields(BaseModel):
             result += f"{field}, "
 
         return result.strip()[:-1]
+
+class AllShopifyProducts(BaseModel):
+    """A list containing all the products returned"""
+    products: List[ShopifyProductSchema]

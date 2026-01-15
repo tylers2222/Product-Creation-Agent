@@ -7,7 +7,8 @@ from agents.infrastructure.shopify_api.client import ShopifyClient, DraftProduct
 from agents.infrastructure.vector_database.db import VectorDb, vector_database
 from agents.infrastructure.vector_database.embeddings import Embeddings, Embeddor
 from config import ServiceContainer
-from .services import embed_search_svc, similarity_search_svc
+from services.internal.vector_db import similarity_search_svc
+from services.internal.embeddor import embed_search_svc
 
 logger = structlog.get_logger(__name__)
 

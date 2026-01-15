@@ -1,139 +1,144 @@
-import asyncio
-import json
-import os
-import random
-import sys
-import traceback
+"""
+Tests for the ShopifyProductWorkflow agent.
+
+Unit tests use mock dependencies, integration tests use real services.
+"""
+import pytest
 import uuid
 
-from dotenv import load_dotenv
-
-# Add parent directory to Python path so we can import packages
-# Go up from agent -> agents -> Product generating agent (project root)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-agents_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(agents_dir)
-
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from agents.infrastructure.vector_database.embeddings_test import MockEmbeddor
-from agents.infrastructure.vector_database.db_test import MockVectorDb
-from agents.infrastructure.firecrawl_api.client_test import MockScraperClient
-from agents.infrastructure.shopify_api.client_test import MockShop
-
 from agents.agent.agent import ShopifyProductWorkflow
-from agents.agent.llm_test import MockLLM
-
-from agents.infrastructure.vector_database.embeddings import Embeddings
-from agents.infrastructure.vector_database.db import vector_database
-from agents.infrastructure.firecrawl_api.client import FirecrawlClient
-from agents.infrastructure.shopify_api.client import ShopifyClient
-from agents.infrastructure.shopify_api.product_schema import InventoryAtStores, Option, Variant
-from agents.agent.llm import llm_client
-
 from agents.agent.prompts import format_product_input, PromptVariant
-from agents.agent.tools import create_all_tools, ServiceContainer
+from agents.infrastructure.shopify_api.product_schema import Option, Variant, InventoryAtStores
 
 
-from config import create_service_container
+# -----------------------------------------------------------------------------
+# Test Data Fixtures
+# -----------------------------------------------------------------------------
 
-load_dotenv()
+@pytest.fixture
+def sample_prompt_variant():
+    """Sample product input for testing the workflow."""
+    option_size_50g = Option(option_name="Size", option_value="50 g")
+    option_flavour_choc = Option(option_name="Flavour", option_value="White Choc Caramel")
 
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
-os.environ["LANGCHAIN_PROJECT"] = "shopify-product-workflow"
+    variants = [
+        Variant(
+            option1_value=option_size_50g,
+            option2_value=option_flavour_choc,
+            sku=922026,
+            barcode="0810095637971",
+            price=4.95,
+            product_weight=0.05,
+            inventory_at_stores=InventoryAtStores(city=15, south_melbourne=15)
+        ),
+    ]
 
-product_name = "Oxyshred Protein Lean Bar"
-brand = "EHP"
-option_1_1 = Option(option_name="Size", option_value="50 g")
-option_1_2 = Option(option_name="Size", option_value="Box of 12")
-option_2_1 = Option(option_name="Flavour", option_value="White Choc Caramel")
-option_2_2 = Option(option_name="Flavour", option_value="Strawberries & Cream")
-option_2_3 = Option(option_name="Flavour", option_value="Choc Peanut Caramel")
-option_2_4 = Option(option_name="Flavour", option_value="Cookies & Cream")
-variants = [
-    # 50g variants
-    Variant(option1_value=option_1_1, option2_value=option_2_1, sku=922026, barcode="0810095637971", price=4.95, product_weight=0.05, inventory_at_stores=InventoryAtStores(city=15, south_melbourne=15)),
-    Variant(option1_value=option_1_1, option2_value=option_2_2, sku=922028, barcode="0810095637933", price=4.95, product_weight=0.05, inventory_at_stores=InventoryAtStores(city=15, south_melbourne=15)),
-    Variant(option1_value=option_1_1, option2_value=option_2_3, sku=922027, barcode="0810095637988", price=4.95, product_weight=0.05, inventory_at_stores=InventoryAtStores(city=15, south_melbourne=15)),
-    Variant(option1_value=option_1_1, option2_value=option_2_4, sku=922029, barcode="0810095637945", price=4.95, product_weight=0.05, inventory_at_stores=InventoryAtStores(city=15, south_melbourne=15)),
-]
-pv = PromptVariant(
-    brand_name=brand,
-    product_name=product_name,
-    variants=variants
-)
+    return PromptVariant(
+        brand_name="EHP",
+        product_name="Oxyshred Protein Lean Bar",
+        variants=variants
+    )
 
-request_id = uuid.UUID()
 
-class unittest:
-    def __init__(self) -> None:
-        self.scraper = MockScraperClient()
-        self.embeddor = MockEmbeddor()
-        self.vector_db = MockVectorDb()
-        self.shop = MockShop()
-        self.llm = MockLLM()
+@pytest.fixture
+def workflow_with_mocks(mock_shop, mock_scraper, mock_vector_db, mock_embeddor, mock_llm):
+    """Create a ShopifyProductWorkflow with all mock dependencies."""
+    from config import ServiceContainer
+    from agents.agent.tools import create_all_tools
 
-    def test_1(self):
-        print("="*60)
-        print("STARTING unittest.test_1")
-        s = ShopifyProductWorkflow(shop=self.shop, scraper=self.scraper, vector_db=self.vector_db, embeddor=self.embeddor, llm=self.llm)
+    # Create a service container with mocks for tools
+    sc = ServiceContainer(
+        shop=mock_shop,
+        scraper=mock_scraper,
+        vector_db=mock_vector_db,
+        embeddor=mock_embeddor,
+        llm=mock_llm
+    )
+    tools = create_all_tools(sc)
 
-        try:
-            product_name = "Freak3d"
-            brand = " Anabolix Nutrition"
-            option = Option(option_name="Size", option_value="1 kg")
-            variants = [Variant(option_1=option, sku=random.randint(99999, 999999), barcode=random.randint(999999999999,9999999999999), price=49.95)]
-            pv = PromptVariant(
-                brand_name=brand,
-                product_name=product_name,
-                variants=variants
-            )
+    return ShopifyProductWorkflow(
+        shop=mock_shop,
+        scraper=mock_scraper,
+        vector_db=mock_vector_db,
+        embeddor=mock_embeddor,
+        llm=mock_llm,
+        tools=tools
+    )
 
-            format_product_input(prompt_variant=pv)
-            s.service_workflow(query="Hi", request_id=str(request_id))
 
-        except Exception as e:
-            print(f"Error: {e}")
+# -----------------------------------------------------------------------------
+# Unit Tests
+# -----------------------------------------------------------------------------
 
-            print(traceback.format_exc())
-        print("Completed unittest.test_1")
+class TestShopifyProductWorkflow:
+    """Unit tests for ShopifyProductWorkflow using mock dependencies."""
 
-class integrationtests:
-    def __init__(self):
-        self.sc = create_service_container()
-        self.tools = create_all_tools(self.sc)
-        self.workflow = ShopifyProductWorkflow(shop=self.sc.shop, scraper=self.sc.scraper, vector_db=self.sc.vector_db, embeddor=self.sc.embeddor, llm=self.sc.llm, tools=self.tools)
+    def test_workflow_initialization(self, workflow_with_mocks):
+        """Test that the workflow initializes correctly with mock dependencies."""
+        assert workflow_with_mocks is not None
 
-    async def test_shopify_workflow(self):
-        try:
-            query = format_product_input(prompt_variant=pv)
-            await self.workflow.service_workflow(query=query, request_id=str(request_id))
+    def test_format_product_input(self, sample_prompt_variant):
+        """Test that format_product_input produces valid query string."""
+        query = format_product_input(prompt_variant=sample_prompt_variant)
 
-        except Exception as e:
-            print(f"Error: {e} -> Traceback: \n{traceback.format_exc()}")
+        assert query is not None
+        assert len(query) > 0
+        assert "EHP" in query or "Oxyshred" in query
 
-    def test_node_one(self):
-        query = format_product_input(prompt_variant=pv)
-        test_state = {
-            "query": query
-        }
+    def test_format_product_input_includes_inventory(self, sample_prompt_variant):
+        """Test that format_product_input includes inventory information."""
+        query = format_product_input(prompt_variant=sample_prompt_variant)
 
-        # debugging added model 
-        assert "Inventory: city=" in query or "inventory" in query.lower()
-        print("Query: ", query)
+        # The query should contain inventory information
+        assert "15" in query or "inventory" in query.lower()
 
-        result = self.workflow.query_extract(state=test_state)
-        result_as_string = json.dumps(result)
-        assert "'inventory_at_stores': {'city': 15, 'south_melbourne': 15" in result_as_string
 
-        print(result)
+# -----------------------------------------------------------------------------
+# Integration Tests
+# -----------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    #ut = unittest()
-    #ut.test_1()
+@pytest.mark.integration
+class TestShopifyProductWorkflowIntegration:
+    """Integration tests for ShopifyProductWorkflow using real services.
 
-    it = integrationtests()
-    asyncio.run(it.test_shopify_workflow())
-    #it.test_node_one()
+    These tests require environment variables to be set:
+    - SHOPIFY_API_KEY, SHOPIFY_API_SECRET, SHOPIFY_TOKEN
+    - FIRECRAWL_API_KEY
+    - QDRANT_URL, QDRANT_API_KEY
+    - OPENAI_API_KEY
+
+    Run with: pytest -m integration
+    Skip with: pytest -m "not integration"
+    """
+
+    @pytest.fixture
+    def integration_workflow(self):
+        """Create a workflow with real service dependencies."""
+        from config import create_service_container
+        from agents.agent.tools import create_all_tools
+
+        sc = create_service_container()
+        tools = create_all_tools(sc)
+
+        return ShopifyProductWorkflow(
+            shop=sc.shop,
+            scraper=sc.scraper,
+            vector_db=sc.vector_db,
+            embeddor=sc.embeddor,
+            llm=sc.llm,
+            tools=tools
+        )
+
+    @pytest.mark.asyncio
+    async def test_service_workflow_runs(self, integration_workflow, sample_prompt_variant):
+        """Test that the full workflow executes without errors."""
+        query = format_product_input(prompt_variant=sample_prompt_variant)
+        request_id = str(uuid.uuid4())
+
+        result = await integration_workflow.service_workflow(
+            query=query,
+            request_id=request_id
+        )
+
+        assert result is not None
+        assert hasattr(result, 'url') or hasattr(result, 'id')

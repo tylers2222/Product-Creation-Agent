@@ -21,6 +21,8 @@ from .tools import create_all_tools
 from config import create_service_container, ServiceContainer
 
 from services.product_create_service import ShopifyProductCreateService
+from services.internal.vector_db import product_similarity_threshold_svc
+from models.scraper_response import ScraperResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -59,7 +61,7 @@ class ShopifyProductWorkflow:
         logger.debug("Inititalising ShopifyProductWorkflow class")
 
         self.workflow = StateGraph(AgentState)
-        self.product_create_service = ShopifyProductCreateService(shop=shop, scraper=scraper, vector_db=vector_db, embeddor=embeddor, llm=llm)
+        self.product_create_service = ShopifyProductCreateService(shop=shop, scraper=scraper, vector_db=vector_db, embeddor=embeddor, llm=llm, tools=tools)
 
         self.agent = synthesis_agent(tools=tools)
 
@@ -97,7 +99,8 @@ class ShopifyProductWorkflow:
         }
 
     def check_if_exists(state: AgentState):
-        
+        # TODO: Implement product existence check
+        # use the services to one line these nodes
 
     def query_scrape(self, state: AgentState):
         """A simple scrape search node in the pipeline"""

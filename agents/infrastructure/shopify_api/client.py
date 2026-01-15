@@ -1,17 +1,12 @@
 import datetime
-import json
 import structlog
-import traceback
 from pydantic import BaseModel
 import shopify
-from dotenv import load_dotenv
-import os
 import requests
 from typing import Literal, Protocol
-from .product_schema import DraftProduct, DraftResponse, Fields
-from .schema import Inventory, Inputs
+from .product_schema import DraftProduct, DraftResponse, Fields, AllShopifyProducts, ShopifyProductSchema
+from .schema import Inventory, Inputs, SkuSearchResponse
 from .exceptions import ShopifyError
-import sys
 
 logger = structlog.get_logger(__name__)
     
@@ -24,6 +19,9 @@ class Shop(Protocol):
         ...
 
     def fill_inventory(self, inventory_data: Inventory):
+        ...
+    
+    async def search_by_sku(self, sku: int) -> SkuSearchResponse | None:
         ...
 
 class Location(BaseModel):
@@ -300,8 +298,9 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
         return True
 
     def get_products_from_store(self, fields: Fields | None = None) -> list:
+        """Get all the products from a store with specific tags"""
         try:
-            all_products = []
+            all_products_resource = []
 
             logger.debug("Sending with fields", fields=fields)
             if fields is not None:
@@ -315,19 +314,77 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
                 return None
 
             while products:
-                all_products.extend(products)
+                all_products_resource.extend(products)
 
                 if products.has_next_page():
                     products = products.next_page()
                 else:
                     break
 
-            logger.info("Successfully got all the products", length_product=len(all_products))
-            return all_products
+            logger.info("Successfully got all the products", length_product=len(all_products_resource))
+            return [ShopifyProductSchema.from_shopify_resource(product) for product in all_products_resource]
 
         except Exception as e:
             logger.error("failed to get shopify products", error=e, exc_info=True)
             return None
+
+    async def search_by_sku(self, sku: int) -> SkuSearchResponse | None:
+        """Function that enables sku searching in your shop"""
+        logger.debug("Starting search_by_sku", sku=sku)
+        query = """
+query SearchVariantBySku($q: String!) {
+    productVariants(first: 1, query: $q) {
+        edges {
+            node {
+                id
+                title
+                sku
+                price
+                product {
+                    id
+                    title
+                }
+            }
+        }
+    }
+}
+        """
+
+        headers = {
+            "X-Shopify-Access-Token": self.access_token,
+            "Content-Type": "application/json"
+        }
+
+        variables = {
+            "q": f'sku:"{sku}"'
+        }
+
+        response = requests.post(
+            url=self.graph_url,
+            headers=headers,
+            json={"query": query, "variables": variables},
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            logger.error("Failed to search by SKU", sku=sku, status_code=response.status_code)
+            return None
+
+        response_dict = response.json()
+        logger.debug("Response from search_by_sku", response=response_dict)
+
+        errors = response_dict.get("errors", None)
+        if errors:
+            logger.error("GraphQL errors in search_by_sku", sku=sku, errors=errors)
+            return None
+
+        edges = response_dict.get("data", {}).get("productVariants", {}).get("edges", [])
+        if not edges:
+            logger.debug("No edges returned, product didnt exist")
+            return None
+
+        node = edges[0].get("node")
+        return SkuSearchResponse(**node) if node else None
 
     def what_methods_does_a_variant_have(self):
         """Non protocol function to test logic of the ecommerce api"""

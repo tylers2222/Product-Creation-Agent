@@ -76,4 +76,12 @@ gui/*.zip
 gui/*.exe
 gui/*.app
 
+# Store data
+
+store_data/*
+# tests use embedding examples, the rest is local only
+!store_data/embedding_examples/
+
+.claude/
+
 *.pem

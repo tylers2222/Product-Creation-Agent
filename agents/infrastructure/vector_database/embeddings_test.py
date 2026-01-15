@@ -1,94 +1,138 @@
-import json
-import random
-import os
-import sys
-from dotenv import load_dotenv
-import traceback
-
-# Add parent directory to Python path so we can import packages
-parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-from agents.infrastructure.vector_database.embeddings import Embeddor, Embeddings
-from agents.infrastructure.vector_database.embeddings_mock import MockEmbeddor
-
-os.chdir("..")
-load_dotenv()
-
-test_documents = {
-    "test_1": {
-        "description": "10 complete titles",
-        "test": ["Tyler is a software engineer", "Sarah loves playing guitar", "The quick brown fox jumps over the lazy dog", "Machine learning transforms data into insights", "Coffee fuels productivity and creativity", "Python is a versatile programming language", "Mountains provide breathtaking views", "Reading books expands your knowledge", "Exercise improves both physical and mental health", "Music has the power to change moods"],
-        "wanted_result": 10
-    } 
-}       
-
-class UnitTests:
-    """Unit tests for the embeddings package"""
-    def __init__(self) -> None:
-        self.embeddor: Embeddor = MockEmbeddor()
-
-    def embed_documents(self):
-        for key, value in test_documents.items():
-            print("="*60)
-            print(f"Testing -> {value["description"]}")
-            result = self.embeddor.embed_documents(documents=value["test"])
-            print(f"Length Of Result: {len(result)}")
-            assert(len(result) == value["wanted_result"])
-
-class IntegrationTest:
-    def __init__(self) -> None:
-        self.client: Embeddor = Embeddings()
-
-    def test_embed_documents(self):
-        print("="*60)
-        print(f"Testing -> {test_documents["test_1"]["description"]}")
-        result = self.client.embed_documents(documents=test_documents["test_1"]["test"])
-        print(f"Result: \n\n{result[:5]}")
-
-    def test_embed_document_and_write_to_file(self):
-        """A helping testing to assist searching in the database test script"""
-        print("="*60)
-        print("Testing -> Writing a real embed to file")
-
-        document = "Optimum Nutrition Whey Protein Powder"
-
-        result = self.client.embed_documents(documents=[document])
-        assert(result is not None)
-
-        file_content = {
-            "text": document,
-            "embed": result[0]
-        }
-
-        try:
-            with open("vector_database/singe_document_embed.json", "w", encoding="utf-8") as f:
-                json.dump(file_content, f, indent=3)
-
-            print("File written to successfully")
-
-        except Exception as e:
-            print(f"Error writing to file: {e} ->\n\n{traceback.format_exc()}")
-    
-    def test_embedding_some_product_names(self):
-        products = ["Ultra Pure Creatine", "Creatine +", "Micronized Creatine"]
-        embed_result = self.client.embed_documents(products)
-
-        final_json_result = {}
-        for idx, embed in enumerate(embed_result):
-            product = products[idx]
-            print(f"Adding {product} to result")
-            final_json_result[product] = embed
-
-        path = "vector_database/product_names_embedded.json"
-        with open(path, "w") as f:
-            json.dump(final_json_result, f, indent=3)
-            print(f"Written file to path: {path}")
+import pytest
 
 
-if __name__ == "__main__":
-    ut = UnitTests()
-    it = IntegrationTest()
-    #it.test_embed_document_and_write_to_file()
-    it.test_embedding_some_product_names()
+# -----------------------------------------------------------------------------
+# Test Data Fixtures
+# -----------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_documents():
+    """Fixture providing sample documents for embedding."""
+    return [
+        "Tyler",
+        "Tyler is a software engineer",
+        "Sarah loves playing guitar",
+        "Machine learning transforms data into insights",
+        "Coffee fuels productivity and creativity",
+        "Python is a versatile programming language",
+    ]
+
+
+# -----------------------------------------------------------------------------
+# Unit Tests
+# -----------------------------------------------------------------------------
+
+class TestMockEmbeddor:
+    """Unit tests for MockEmbeddor client."""
+
+    def test_single_embed_positive_first_integer(self, mock_embeddor, sample_documents):
+        """ 
+        Test that returns the first index of an embedding as positive
+        giving us flexibility in vector db searches when mocked
+        """
+        for document in sample_documents:
+            if len(document) < 15:
+                under_15_char_document = document
+                break
+
+        positive_first_integer_embed = mock_embeddor.embed_document(document=under_15_char_document)
+        assert positive_first_integer_embed is not None
+        assert positive_first_integer_embed[0] > 0
+
+    def test_single_embed_negative_first_integer(self, mock_embeddor, sample_documents):
+        """ 
+        Test that returns the first index of an embedding as negative
+        giving us flexibility in vector db searches when mocked
+        """
+
+        for document in sample_documents:
+            if len(document) > 15:
+                over_15_char_document = document
+                break
+
+        negative_first_integer_embed = mock_embeddor.embed_document(document=over_15_char_document)
+        assert negative_first_integer_embed is not None
+        assert negative_first_integer_embed[0] < 0
+
+    def test_value_error(self, mock_embeddor, sample_documents):
+        with pytest.raises(ValueError):
+            mock_embeddor.embed_document(document="")
+
+    def test_embed_documents_returns_list(self, mock_embeddor, sample_documents):
+        """Test that embed_documents returns a list of embeddings."""
+        result = mock_embeddor.embed_documents(documents=sample_documents)
+
+        assert result is not None
+        assert isinstance(result, list)
+
+    def test_embed_documents_returns_correct_count(self, mock_embeddor, sample_documents):
+        """Test that embed_documents returns the correct number of embeddings."""
+        result = mock_embeddor.embed_documents(documents=sample_documents)
+
+        assert len(result) == len(sample_documents)
+
+    def test_embed_documents_returns_vectors(self, mock_embeddor, sample_documents):
+        """Test that each embedding is a list of floats."""
+        result = mock_embeddor.embed_documents(documents=sample_documents)
+
+        for embedding in result:
+            assert isinstance(embedding, list)
+            assert len(embedding) > 0
+
+    def test_embed_single_document(self, mock_embeddor):
+        """Test embedding a single document."""
+        result = mock_embeddor.embed_documents(["Test document"])
+
+        assert result is not None
+        assert len(result) == 1
+
+    def test_embed_empty_list(self, mock_embeddor):
+        """Test embedding an empty list."""
+        result = mock_embeddor.embed_documents([])
+
+        assert result is not None
+        assert len(result) == 0
+
+
+# -----------------------------------------------------------------------------
+# Integration Tests
+# -----------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestEmbeddingsIntegration:
+    """Integration tests using real OpenAI API.
+
+    These tests require OPENAI_API_KEY to be set.
+
+    Run with: pytest -m integration
+    """
+
+    @pytest.fixture
+    def real_embeddor(self):
+        """Create a real OpenAI embeddings client."""
+        from agents.infrastructure.vector_database.embeddings import Embeddings
+        return Embeddings()
+
+    def test_embed_documents_returns_embeddings(self, real_embeddor, sample_documents):
+        """Test that real embedding returns correct number of vectors."""
+        result = real_embeddor.embed_documents(documents=sample_documents)
+
+        assert result is not None
+        assert len(result) == len(sample_documents)
+
+    def test_embeddings_have_correct_dimensions(self, real_embeddor):
+        """Test that embeddings have the expected dimensions (1536 for text-embedding-3-small)."""
+        result = real_embeddor.embed_documents(["Test document"])
+
+        assert result is not None
+        assert len(result) == 1
+        # text-embedding-3-small produces 1536-dimension vectors
+        assert len(result[0]) == 1536
+
+    def test_embeddings_are_floats(self, real_embeddor):
+        """Test that embedding values are floats."""
+        result = real_embeddor.embed_documents(["Test document"])
+
+        assert result is not None
+        for value in result[0][:10]:  # Check first 10 values
+            assert isinstance(value, float)

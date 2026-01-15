@@ -9,7 +9,9 @@ from agents.infrastructure.shopify_api.mock import MockShop
 from agents.infrastructure.vector_database.db import vector_database, VectorDb
 from agents.infrastructure.vector_database.db_mock import MockVectorDb
 from agents.infrastructure.vector_database.embeddings import Embeddings, Embeddor
+from agents.infrastructure.vector_database.embeddings_mock import MockEmbeddor
 from agents.agent.llm import LLM, llm_client
+from agents.agent.llm_mock import MockLLM
 
 load_dotenv()
 
@@ -51,8 +53,35 @@ def create_service_container() -> ServiceContainer:
         llm=llm
     )
 
-def create_mock_service_container():
+def create_mock_service_container() -> ServiceContainer:
+    shop = get_mock_shop()
+    scraper = get_mock_scraper()
+    vector_db = get_mock_vector_db()
+    embeddor = get_mock_embeddor()
+    llm = get_mock_llm()
 
+    return ServiceContainer(
+        shop=shop,
+        scraper=scraper,
+        vector_db=vector_db,
+        embeddor=embeddor,
+        llm=llm
+    )
+
+def get_mock_shop() -> MockShop:
+    return MockShop()
+
+def get_mock_scraper() -> MockScraperClient:
+    return MockScraperClient()
+
+def get_mock_vector_db() -> MockVectorDb:
+    return MockVectorDb()
+
+def get_mock_embeddor() -> MockEmbeddor:
+    return MockEmbeddor()
+
+def get_mock_llm() -> MockLLM:
+    return MockLLM()
 
 def create_scraper():
     api_key = os.getenv("FIRECRAWL_API_KEY")

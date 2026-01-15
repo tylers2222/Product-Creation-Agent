@@ -1,72 +1,91 @@
-import os
-import sys
-from dotenv import load_dotenv
-from typing import Optional
-from collections import namedtuple
+"""
+Tests for Firecrawl scraper client.
 
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+Unit tests use mock client, integration tests use real Firecrawl API.
+"""
+import pytest
 
-os.chdir("..")
-load_dotenv()
-
-from agents.infrastructure.firecrawl_api.client import FirecrawlClient, Scraper, FireResult
-from agents.infrastructure.firecrawl_api.mock import MockScraperClient
-
-class UnitTests:
-    def __init__(self):
-        self.client: Scraper = MockScraperClient()
-
-    def test_scrape_and_search_site(self):
-        fire_result = self.client.scrape_and_search_site()
-        assert type(fire_result) == FireResult
+from agents.infrastructure.firecrawl_api.schema import FireResult
 
 
-def send_to_file():
-    print("="*60)
-    print("STARTING INTEGRATION TEST IN SCRAPER PACKAGE\n\n")
-    firecrawl_client = FirecrawlClient(api_key=os.getenv("FIRECRAWL_API_KEY"))
+# -----------------------------------------------------------------------------
+# Unit Tests
+# -----------------------------------------------------------------------------
 
-    query1 = "Optimum Nutrition Whey afdsafsdf" #fix
-    fire_result = firecrawl_client.scrape_and_search_site(query1)
-    assert(fire_result is not None)
+class TestFirecrawlClient:
+    """Unit tests for the Firecrawl scraper client."""
 
-    print(f"Type Of 'fire_result': {type(fire_result)}")
-    print(f"Type Of 'fire_result.data': {type(fire_result.data)}")
-    print(f"Type Of 'fire_result.data.web': {type(fire_result.data.web)}")
-    print(f"Len Of Web List: {len(fire_result.data.web)}")
-    print(f"Type Of First Item: {fire_result.data.web[0]}")
-    print(f"First item has these attributes: {dir(fire_result.data.web[0])}")
-    print(f"Does it have .markdown? {hasattr(fire_result.data.web[0], 'markdown')}")
-    print(f"Does it have .get()? {hasattr(fire_result.data.web[0], 'get')}")
+    def test_scrape_and_search_returns_fire_result(self, mock_scraper):
+        """Test that scrape_and_search_site returns a FireResult."""
+        result = mock_scraper.scrape_and_search_site(query="Test query")
 
-    os.makedirs("firecrawl_api/json_responses", exist_ok=True)
-    with open("firecrawl_api/json_responses/search_and_scrape.json", "w") as f:
-        num_of_chars_returned = f.write(fire_result.model_dump_json(indent=3))
-        if num_of_chars_returned == 0:
-            print("Failed to write to file")
-        else:
-            print("Wrote to file successfully")
+        assert result is not None
+        assert isinstance(result, FireResult)
+
+    def test_fire_result_has_data(self, mock_scraper):
+        """Test that FireResult contains data."""
+        result = mock_scraper.scrape_and_search_site(query="Test query")
+
+        assert result.data is not None
+
+    def test_fire_result_has_query(self, mock_scraper):
+        """Test that FireResult contains the query."""
+        query = "Optimum Nutrition Whey"
+        result = mock_scraper.scrape_and_search_site(query=query)
+
+        assert result.query is not None
+
+    def test_fire_result_data_has_web_results(self, mock_scraper):
+        """Test that FireResult data contains web results."""
+        result = mock_scraper.scrape_and_search_site(query="Test query")
+
+        assert hasattr(result.data, 'web')
+        assert result.data.web is not None
+        assert len(result.data.web) > 0
 
 
+# -----------------------------------------------------------------------------
+# Integration Tests
+# -----------------------------------------------------------------------------
 
-    #print("Successfully written to file")
+@pytest.mark.integration
+class TestFirecrawlClientIntegration:
+    """Integration tests using real Firecrawl API.
 
-    #print("="*60)
-    #print("RESULTS ARE IN...")
-    #print(f"Success: {res.success}")
-    #print(f"Query: {res.query}")
-    #print(f"Estimate Tokens On Markdown: {res.token_count}")
+    These tests require FIRECRAWL_API_KEY to be set.
 
-    #for site in res.data:
-    #    print()
-    #    print(f"Title: {site.title}")
-    #    print(f"Description: {site.description}")
-    #    print(f"Url: {site.url}")
-    #    print()
+    Run with: pytest -m integration
+    """
 
-    #print("="*60)
+    @pytest.fixture
+    def real_scraper(self):
+        """Create a real Firecrawl client."""
+        from agents.infrastructure.firecrawl_api.client import FirecrawlClient
+        import os
+        from dotenv import load_dotenv
 
-if __name__ == "__main__":
-    send_to_file()
+        load_dotenv()
+        return FirecrawlClient(api_key=os.getenv("FIRECRAWL_API_KEY"))
+
+    def test_real_scrape_returns_results(self, real_scraper):
+        """Test that real scraping returns results."""
+        query = "Optimum Nutrition Whey Protein"
+
+        result = real_scraper.scrape_and_search_site(query=query, limit=3)
+
+        assert result is not None
+        assert isinstance(result, FireResult)
+        assert result.data is not None
+
+    def test_real_scrape_web_results_have_markdown(self, real_scraper):
+        """Test that web results contain markdown content."""
+        query = "Optimum Nutrition Whey Protein"
+
+        result = real_scraper.scrape_and_search_site(query=query, limit=3)
+
+        assert result.data.web is not None
+        assert len(result.data.web) > 0
+
+        # Check first result has markdown
+        first_result = result.data.web[0]
+        assert hasattr(first_result, 'markdown')

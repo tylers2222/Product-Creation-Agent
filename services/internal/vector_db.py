@@ -8,10 +8,15 @@ from qdrant_client.models import PointStruct
 
 logger = logging.getLogger(__name__)
 
-def similarity_search_svc(vector_query: list[float], results_wanted: int, vector_db: VectorDb) -> list[PointStruct]:
+def similarity_search_svc(
+    vector_query: list[float], results_wanted: int, vector_db: VectorDb) -> list[PointStruct]:
+    """
+    Searches the vector database with config
+    Need to add the config
+    """
     logger.debug("Started similarity_search_svc", length_query=len(vector_query), returned_db=True)
 
-    points = vector_db.search_points(collection_name="shopify_products", query_vector=vector_query[0], k=results_wanted)
+    points = vector_db.search_points(collection_name="shopify_products", query_vector=vector_query, k=results_wanted)
     if not points:
         logger.error("No search results returned for search vector")
         return None
@@ -25,7 +30,8 @@ class SimilarityResult(BaseModel):
     score:          float
     product_name:   str
 
-def product_similarity_threshold_svc(vector_query: list[float], vector_db: VectorDb) -> SimilarityResult | None:
+async def product_similarity_threshold_svc(
+    vector_query: list[float], vector_db: VectorDb) -> SimilarityResult | None:
     """ 
     Holds the logic containing our similarity thresholds
     This needs to hold tenant specific config
@@ -36,7 +42,7 @@ def product_similarity_threshold_svc(vector_query: list[float], vector_db: Vecto
     """
     return_documents = similarity_search_svc(vector_query, 4, vector_db)
     for document in return_documents:
-        if document.score > 0.92:
+        if document.score > 92:
             payload = document.payload
             return SimilarityResult(
                 score = document.score,
@@ -46,7 +52,7 @@ def product_similarity_threshold_svc(vector_query: list[float], vector_db: Vecto
     logger.info("Similarity threshold service returned no similar products")
     return None
 
-def batch_products_to_vector_db(products: list, database: VectorDb, embedder: Embeddor, collection_name: str):
+async def batch_products_to_vector_db(products: list, database: VectorDb, embedder: Embeddor, collection_name: str):
     """Business Logic For Adding Products To Vector Db """
     logger.debug("Started batch_products_to_vector_db service", collection_name=collection_name, length_of_products=len(products))
 
