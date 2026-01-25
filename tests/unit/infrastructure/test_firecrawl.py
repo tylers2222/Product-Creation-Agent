@@ -3,11 +3,12 @@ Tests for Firecrawl scraper client.
 
 Unit tests use mock client, integration tests use real Firecrawl API.
 """
+import json
 import os
 from dotenv import load_dotenv
 import pytest
 from firecrawl.types import SearchData, SearchResultWeb
-from product_agent.infrastructure.firecrawl.client import FirecrawlClient
+from product_agent.infrastructure.firecrawl.client import FirecrawlClient, KadoaScraper
 from product_agent.infrastructure.firecrawl.schemas import FireResult
 
 # -----------------------------------------------------------------------------
@@ -113,6 +114,7 @@ class TestFirecrawlClientIntegration:
         """Test getting multiple urls data"""
         query = "Optimum Nutrition Gold Standard 100% Whey buy online"
         urls = real_scraper.get_urls_for_query(query=query)
+        assert urls is not None
         print(urls)
 
     def test_extracting_url(self, real_scraper):
@@ -146,4 +148,43 @@ class TestFirecrawlClientIntegration:
         search_data = SearchData(web=web_results)
         
         data = real_scraper.extract_from_urls(url_data=search_data)
+        assert data is not None
         print(data.model_dump_json(indent=3))
+
+
+@pytest.mark.integration
+class TestKadoaScraper:
+    """A test for Koadoas Ai scraper"""
+
+    @pytest.fixture
+    def real_scraper(self):
+        """Returns a real instance of the scraper"""
+        load_dotenv()
+        return KadoaScraper(os.getenv("KADOA_API_KEY"))
+
+    @pytest.fixture
+    def urls(self):
+        return [
+            "https://www.optimumnutrition.com/en-au/products/gold-standard-100-whey-protein-powder-au",
+            "https://www.nutritionwarehouse.com.au/products/gold-standard-100-whey-by-optimum-nutrition?variant=42556493856995"
+        ]
+
+    def test_single_url(self, real_scraper, urls):
+        """Testing a single url from the Kadoa client"""
+        url = urls[0]
+        print("STARTING WITH URL: ", url)
+        scrape_result = real_scraper.scrape_url(url=urls[0])
+        assert scrape_result is not None
+
+        print("Type: ", type(scrape_result))
+        print()
+        print("Dir: ", dir(scrape_result))
+        print()
+        print("Result: ", scrape_result.model_dump_json(indent=3))
+
+    def test_single_url_http(self, real_scraper, urls):
+        url = urls[0]
+        print("STARTING WITH URL: ", url)
+
+        response = real_scraper.scrape_url_http(url=url)
+        print(json.dumps(response, indent=3))

@@ -6,15 +6,13 @@ This module builds fully-configured agents by combining:
 - Tools built with dependencies from ServiceContainer
 - LangChain/LangGraph infrastructure
 """
-from langchain_core.language_models.llms import aget_prompts
 import structlog
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.tools import tool
 
-from product_agent.core.agent_configs.synthesis import AgentConfig
-from .container import ServiceContainer
+from .config import AgentConfig
+from ..container import ServiceContainer
 from product_agent.services.infrastructure.vector_search import similarity_search_svc
 from product_agent.services.infrastructure.embedding import embed_search_svc
 

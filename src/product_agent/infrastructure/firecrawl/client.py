@@ -1,77 +1,17 @@
 import inspect
-import re
+import json
+import requests
 from firecrawl import Firecrawl
 from firecrawl.types import ScrapeOptions, ScrapeFormats, SearchData
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Protocol, runtime_checkable
-from functools import wraps
-import os
-import time
+from typing import Protocol
 import structlog
+from kadoa_sdk import KadoaClient, KadoaSdkConfig, ExtractionOptions
 from .exceptions import FirecrawlError
-from .schemas import FireResult, DataResult
+from .schemas import FireResult
+from .utils import clean_markdown
 
 logger = structlog.get_logger(__name__)
 
-
-def clean_markdown(markdown: str) -> str:
-    """
-    Remove junk from scraped markdown to reduce token costs.
-
-    Removes:
-    - Image references (![alt](url))
-    - CDN URLs with query parameters
-    - Navigation links (Skip to content, etc.)
-    - Cart/UI text
-    - Multiple consecutive newlines
-    - Common UI button text
-
-    This can reduce markdown size by 80-90%, saving significant LLM costs.
-    """
-    if not markdown:
-        return ""
-
-    original_length = len(markdown)
-
-    # Remove image references (![alt](url))
-    markdown = re.sub(r'!\[.*?\]\(.*?\)', '', markdown)
-
-    # Remove standalone CDN URLs with query params (png, jpg, etc.)
-    markdown = re.sub(r'https?://[^\s)]+\.(png|jpg|jpeg|gif|webp)[^\s)]*', '', markdown)
-
-    # Remove URLs with version/width query params (CDN cruft)
-    markdown = re.sub(r'https?://[^\s)]+\?v=\d+[^\s)]*', '', markdown)
-
-    # Remove navigation links
-    markdown = re.sub(r'\[Skip to .*?\]\(.*?\)', '', markdown)
-    markdown = re.sub(r'\[Continue shopping\]\(.*?\)', '', markdown)
-
-    # Remove cart UI text
-    markdown = re.sub(r'Your cart is empty', '', markdown)
-    markdown = re.sub(r'\d+Your cart is empty', '', markdown)
-
-    # Remove standalone UI button text
-    markdown = re.sub(r'\b(Close|Clear|ClearClose)\b', '', markdown)
-
-    # Remove multiple consecutive newlines
-    markdown = re.sub(r'\n{3,}', '\n\n', markdown)
-
-    # Remove multiple consecutive spaces
-    markdown = re.sub(r' {2,}', ' ', markdown)
-
-    cleaned = markdown.strip()
-    cleaned_length = len(cleaned)
-    reduction = ((original_length - cleaned_length) / original_length * 100) if original_length > 0 else 0
-
-    logger.debug(
-        "Cleaned markdown",
-        original_length=original_length,
-        cleaned_length=cleaned_length,
-        reduction_percent=f"{reduction:.1f}%"
-    )
-
-    return cleaned
 
 class Scraper(Protocol):
     """An interface with scraping methods"""
@@ -106,10 +46,8 @@ class FirecrawlClient:
             ".cart", ".mini-cart", "#cart",
             ".search-bar", ".search-form",
             # Product variants/gallery (THE BIG ONE)
-            ".product-gallery", ".product-thumbnails",
             ".variant-selector", ".color-swatches",
             ".size-selector", ".flavor-selector",
-            ".product-images", ".image-gallery",
             # Reviews & Social
             ".reviews", "#reviews", ".customer-reviews",
             ".rating", ".star-rating",
@@ -135,7 +73,6 @@ class FirecrawlClient:
                     remove_images=True, 
                 ),
                 exclude_tags=excludeTag,
-                remove_base64_images=True,
                 wait_for=0
             )
         )
@@ -183,3 +120,86 @@ class FirecrawlClient:
         )
 
     #def gather_image()
+
+# ------------------------------------------------------------------------
+# NOT USING
+# ------------------------------------------------------------------------
+class KadoaScraper:
+    """Ai scraper made by Kadoa for easier extraction"""
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.client = KadoaClient(KadoaSdkConfig(api_key=api_key))
+        self.product_prompt = "Extract the main Product Title and all core product details. Capture the full Description, current Price, and all selectable Variants (specifically Sizes, Colors, or Dimensions). Crucially, extract all text content hidden within collapsible UI elements, such as accordions, tabs, specifications lists, or 'read more' dropdowns. Ignore 'Related Products' or 'You May Also Like' sections."
+        logger.debug("Initialised Kadoa Client")
+
+    def scrape_url_http(self, url):
+        """At the time of this comment SDK is bugged, using HTTP"""
+        logger.debug("Staring %s", inspect.stack()[0][3])
+        headers = {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json"
+        }
+        
+        fields = [
+            {"name": "title", "dataType": "STRING", "description": "Product title", "example": "Gold Standard 100% Whey Protein Powder"},
+            {"name": "description", "dataType": "STRING", "description": "Full product description including features, benefits, ingredients, and any collapsible content", "example": "Optimum Nutrition Gold Standard 100% Whey is the world's best-selling whey protein powder... Includes detailed ingredients list, nutritional information, and benefits."},
+            {"name": "price", "dataType": "MONEY", "description": "Current product price"},
+            {"name": "variants", "dataType": "ARRAY", "description": "All product variants from dropdowns/selectors including sizes (e.g., 1lb, 2lb, 5lb), flavors (e.g., Chocolate, Vanilla, Strawberry), colors, or any other selectable options with their associated prices and SKUs", "example": "[{\"size\": \"2lb\", \"flavor\": \"Extreme Milk Chocolate\", \"price\": \"$59.99\", \"sku\": \"ON-GS-2LB-EMC\"}, {\"size\": \"5lb\", \"flavor\": \"Vanilla Ice Cream\", \"price\": \"$119.99\", \"sku\": \"ON-GS-5LB-VIC\"}]"},
+            {"name": "ingredients", "dataType": "STRING", "description": "Product ingredients list from any dropdown or expandable section", "example": "Whey Protein Isolate, Cocoa (Processed with Alkali), Natural and Artificial Flavors, Lecithin, Salt, Acesulfame Potassium, Sucralose"},
+            {"name": "nutritionalInfo", "dataType": "STRING", "description": "Nutritional information including calories, protein, carbs, fats from any expandable sections", "example": "Per serving: 120 calories, 24g protein, 3g carbs, 1g fat"},
+            {"name": "benefits", "dataType": "STRING", "description": "Product benefits and features from any collapsible sections or tabs", "example": "24g of protein per serving, supports muscle recovery, ideal post-workout nutrition"},
+            {"name": "specifications", "dataType": "STRING", "description": "Product specifications including dimensions, weight, serving size from any dropdown or expandable sections", "example": "Serving size: 1 scoop (31g), Servings per container: 32, Dimensions: 10.5 x 6.5 x 6.5 inches"}
+        ]
+        
+        data = {
+            "urls": [url],
+            "name": "Extraction",
+            "entity": "Product",
+            "fields": fields,
+            "userPrompt": self.product_prompt
+        }
+
+        response = requests.post(url="https://api.kadoa.com/v4/workflows",
+            headers=headers, json=data, timeout=300)
+        if response.status_code > 299:
+    
+            try:
+                response_body = response.json()
+            except (ValueError, json.JSONDecodeError):
+                response_body = response.text
+            
+            logger.error("Failed to request url",
+                        url=url,
+                        status_code=response.status_code,
+                        response_body=response_body,
+                        headers=response.headers)
+            raise ValueError(f"Bad Response Code {response.status_code}: {response_body}")
+
+        logger.info("Completed %s", inspect.stack()[0][3])
+        return response.json()
+
+    def scrape_url(self, url: str):
+        """Scrape a single url with sdk"""
+        result = self.client.extraction.run(
+            ExtractionOptions(
+                urls=[url],
+                name="Extraction",
+                user_prompt=self.product_prompt,
+                limit=10,
+            )
+        )
+
+        return result
+
+    def scrape_urls(self, urls: list[str]):
+        """Scrape multiple urls"""
+        result = self.client.extraction.run(
+            ExtractionOptions(
+                urls=[urls],
+                name="Extraction",
+                user_prompt=self.product_prompt,
+                limit=10,
+            )
+        )
+
+        return result

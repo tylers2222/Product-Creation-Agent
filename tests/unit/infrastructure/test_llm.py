@@ -5,6 +5,8 @@ Uses standardized TestCase pattern with data + expected results.
 Unit tests use mock LLM, integration tests use real OpenAI API.
 """
 import pytest
+import os
+from dotenv import load_dotenv
 
 from product_agent.infrastructure.llm.client import markdown_summariser
 from product_agent.models.query import QueryResponse
@@ -155,4 +157,9 @@ class TestMarkdownSpecialtyLLM:
     @pytest.fixture
     def real_llm(self):
         """Create the real llm client"""
-        MarkdownLLM(api_key=)
+        load_dotenv("..")
+        return MarkdownLLM(api_key=os.getenv("GEMINI_API_KEY"))
+
+    def test_markdown(self, real_llm):
+        # need to get a markdown
+        pass

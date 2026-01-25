@@ -10,6 +10,7 @@ from product_agent.infrastructure.vector_db.client import VectorDb
 logger = structlog.getLogger(__name__)
 
 def build_similar_products_tool(embeddor: Embeddor, vector_db: VectorDb):
+    """Build the similar products tools"""
     @tool
     def get_similar_products(query: str):
         """

@@ -82,18 +82,19 @@ def build_service_container() -> ServiceContainer:
 
 
 def build_mock_service_container() -> ServiceContainer:
-    """Build a ServiceContainer with mock implementations for testing."""
-    # Import mocks at runtime to avoid circular imports and keep tests separate
-    from tests.mocks.shopify_mock import MockShop
-    from tests.mocks.firecrawl_mock import MockScraperClient
-    from tests.mocks.vector_db_mock import MockVectorDb
-    from tests.mocks.embeddings_mock import MockEmbeddor
-    from tests.mocks.llm_mock import MockLLM
+    """
+    Build a ServiceContainer with mock implementations for testing.
+
+    Returns:
+        ServiceContainer: Container with mocked dependencies.
+    """
+    from unittest.mock import Mock
 
     return ServiceContainer(
-        shop=MockShop(),
-        scraper=MockScraperClient(),
-        vector_db=MockVectorDb(),
-        embeddor=MockEmbeddor(),
-        llm=MockLLM()
+        shop=Mock(spec=Shop),
+        scraper=Mock(spec=Scraper),
+        vector_db=Mock(spec=VectorDb),
+        embeddor=Mock(spec=Embeddor),
+        llm=Mock(spec=LLM)
     )
+

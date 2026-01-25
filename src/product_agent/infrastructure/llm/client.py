@@ -4,10 +4,8 @@ import structlog
 from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from google import genai
 from google.genai import types
-from google.generativeai import caching
 import datetime
 
 from .prompts import markdown_summariser_prompt, mardown_summariser_system_prompt, GEMINI_MARKDOWN_SUMMARISER_PROMPT
@@ -107,20 +105,13 @@ class open_ai_client:
 class MarkdownLLM:
     """A class that holds concrete markdown specific impls"""
     def __init__(self, api_key: str):
-        self.client = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
-            temperature=0.1,
-            max_tokens=None,
-            timeout=None,
-            max_retries=2,
-        )
-
         self.api_client = genai.Client(api_key=api_key)
         self.system_cache_name = "markdown_summariser"
+
     def _generate_cache(self):
         logger.debug("Starting %s", inspect.stack()[0][3])
 
-        system_cache = self.client.caches.create(
+        system_cache = self.api_client.caches.create(
             model="gemini-1.5-flash",
             config=types.CreateCachedContentConfig(
                 system_instruction=GEMINI_MARKDOWN_SUMMARISER_PROMPT,

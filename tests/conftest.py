@@ -10,10 +10,18 @@ This module provides:
 import pytest
 from typing import Any, TypeVar, Generic
 from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
 
 from qdrant_client.models import PointStruct, ScoredPoint
 
 from product_agent.config import build_mock_service_container, build_service_container
+from src.product_agent.config.agents import build_synthesis_agent
+from src.product_agent.core.agent_configs.synthesis import SYNTHESIS_CONFIG
+from src.product_agent.config.agents.builder import AgentFactory
+from src.product_agent.infrastructure.mcp.client import MCPClient
+from src.product_agent.infrastructure.mcp.config import mcp_server_config
+from src.product_agent.config.agents.config import AgentConfig
 
 from tests.mocks.shopify_mock import MockShop
 from tests.mocks.firecrawl_mock import MockScraperClient
@@ -28,6 +36,7 @@ from product_agent.infrastructure.firecrawl.schemas import FireResult
 from product_agent.models.query import QueryResponse
 from product_agent.services.schemas import ProductExists
 
+load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Standardized Test Case Pattern
@@ -105,6 +114,64 @@ def mock_service_container():
 def service_container():
     """Fixture building a suite of dependencies"""
     return build_service_container()
+
+@pytest.fixture
+def real_service_container():
+    """Fixture building real service container (alias for service_container)"""
+    return build_service_container()
+
+@pytest.fixture
+def real_synthesis_agent(real_service_container):
+    """Fixture building real synthesis agent with real service container"""
+    return build_synthesis_agent(container=real_service_container, config_settings=SYNTHESIS_CONFIG)
+
+@pytest.fixture
+def mock_synthesis_agent(mock_service_container):
+    """Fixture building mock synthesis agent"""
+    from tests.mocks import MockSynthesisAgent
+    return MockSynthesisAgent()
+
+@pytest.fixture
+async def scraper_agent_with_mcp(real_service_container):
+    """Fixture building agent with MCP tools"""
+    mcp_client = MCPClient(all_configs=mcp_server_config())
+    tools = await mcp_client.retrieve_agents_tools(servers=["playwright"])
+
+    stateless_scraper_system_prompt = """
+  You are an expert web scraping agent using Playwright MCP tools.
+
+  # CRITICAL: Understanding Your Environment
+
+  ## Stateless Tool Behavior
+  EVERY tool call opens a FRESH browser with NO memory of previous calls.
+  - playwright_navigate(url) → Opens browser 1, navigates, CLOSES browser 1
+  - playwright_evaluate(code) → Opens browser 2 (fresh), runs code, CLOSES browser 2
+
+  **Browser 2 has NO CONTEXT from browser 1!**
+
+  ## Correct Usage Pattern
+  ALWAYS include navigation in your playwright_evaluate code:
+
+  Ensure you add reasonable timeouts, every selector needs a big timeout, seconds worth of timeout
+  If something fails, you need a back up selector
+
+  ```javascript
+  // ✅ CORRECT - Self-contained
+  await page.goto('URL_HERE', {{waitUntil: 'domcontentloaded', timeout: 30000}});
+  await page.waitForSelector('h1', timeout: 10000);
+  const data = await page.locator('h1').innerText();
+  """
+
+    conf = AgentConfig(
+        name="Test Agent",
+        model="gpt-4o-mini",
+        temperature=0.1,
+        system_prompt=stateless_scraper_system_prompt,
+        tools=tools,
+    )
+
+    af = AgentFactory(real_service_container)
+    return af.build_custom_agent(conf)
 
 # -----------------------------------------------------------------------------
 # Sample Test Data Fixtures
