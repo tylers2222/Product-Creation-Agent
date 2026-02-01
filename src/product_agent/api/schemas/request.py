@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
-from .product_generation import PromptVariant
+from .product import PromptVariant
 
 class RequestSchema(BaseModel):
     request_id: str

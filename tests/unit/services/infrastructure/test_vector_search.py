@@ -5,7 +5,7 @@ Uses standardized TestCase pattern with data + expected results.
 """
 import pytest
 
-from product_agent.services.vector_search import similarity_search_svc, product_similarity_threshold_svc
+from product_agent.services.infrastructure.vector_search import similarity_search_svc, product_similarity_threshold_svc
 
 
 # -----------------------------------------------------------------------------

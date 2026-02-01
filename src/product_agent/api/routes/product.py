@@ -4,9 +4,9 @@ import json
 import datetime
 import uuid
 from fastapi import APIRouter, HTTPException, Response, Depends
-from ..models.request_schema import RequestSchema, Job
-from ..models.product_generation import PromptVariant
-from ..dependencies.product_generation_dependencies import get_job_database, get_queue
+from ..schemas.request import RequestSchema, Job
+from ..schemas.product import PromptVariant
+from ..dependencies import get_job_database, get_queue
 
 router = APIRouter()
 

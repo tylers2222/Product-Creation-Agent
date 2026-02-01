@@ -118,3 +118,47 @@ class MockScraperClient:
             data=mock_search_data,
             query="Rapid supplements cream of rice 1.2kg"
         )
+
+    def scraper_url_to_markdown(self, url: str):
+        """Mock implementation of scraper_url_to_markdown."""
+        logger.debug("Called MockScraperClient.scraper_url_to_markdown", url=url)
+
+        return {
+            "markdown": """# Test Product Page
+
+## Product Details
+This is a test product with mock markdown content.
+
+## Features
+- Feature 1
+- Feature 2
+- Feature 3
+
+## Price
+$29.99""",
+            "metadata": {
+                "url": url,
+                "title": "Test Product Title"
+            }
+        }
+
+    def batch_scraper_url_to_markdown(self, urls: list):
+        """Mock implementation of batch_scraper_url_to_markdown."""
+        logger.debug("Called MockScraperClient.batch_scraper_url_to_markdown", urls=urls)
+
+        # Mock job result
+        MockJob = type('Job', (object,), {
+            'id': 'mock_job_123',
+            'status': 'completed',
+            'results': [
+                {
+                    'markdown': f"""# Product from {url}
+
+## Details
+Mock markdown content for {url}""",
+                    'metadata': {'url': url}
+                } for url in urls
+            ]
+        })
+
+        return MockJob()

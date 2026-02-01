@@ -3,7 +3,7 @@ import json
 import requests
 from firecrawl import Firecrawl
 from firecrawl.types import ScrapeOptions, ScrapeFormats, SearchData
-from typing import Protocol
+from typing import List, Protocol
 import structlog
 from kadoa_sdk import KadoaClient, KadoaSdkConfig, ExtractionOptions
 from .exceptions import FirecrawlError
@@ -15,10 +15,41 @@ logger = structlog.get_logger(__name__)
 
 class Scraper(Protocol):
     """An interface with scraping methods"""
-
     def scrape_and_search_site(self, query: str, limit: int = 5) -> FireResult:
         ...
+    def scraper_url_to_markdown(self, url: str) -> str:
+        ...
+    def batch_scraper_url_to_markdown(self, urls: List[str]) -> list[str]:
+        ...
 
+class UrlProvider(Protocol):
+    """An interface with url getting methods"""
+    def get_urls_for_query(self, query: str, limit: int = 5) -> list:
+        ...
+
+excludeTag = [
+    # Navigation & UI
+    "header", "footer", "nav", "aside",
+    ".skip-to-content", ".skip-link",
+    ".cart", ".mini-cart", "#cart",
+    ".search-bar", ".search-form",
+    # Product variants/gallery (THE BIG ONE)
+    ".variant-selector", ".color-swatches",
+    ".size-selector", ".flavor-selector",
+    # Reviews & Social
+    ".reviews", "#reviews", ".customer-reviews",
+    ".rating", ".star-rating",
+    ".questions-and-answers", "#comments",
+    ".related-products", ".upsell", ".recommendations",
+    ".recently-viewed", ".you-may-like",
+    ".newsletter", ".social-share", ".ads",
+    # Navigation cruft
+    ".breadcrumb", ".footer-links",
+    ".pop-up", ".modal", ".overlay",
+    # Common Shopify classes
+    ".product-form__buttons",
+    ".product-option",
+]
 
 class FirecrawlClient:
     """A concrete impl of a scraper class"""
@@ -29,42 +60,37 @@ class FirecrawlClient:
 
         self.firecrawl_prompt = "Extract the main Product Title and all core product details. Capture the full Description, current Price, and all selectable Variants (specifically Sizes, Colors, or Dimensions). Crucially, extract all text content hidden within collapsible UI elements, such as accordions, tabs, specifications lists, or 'read more' dropdowns. Ignore 'Related Products' or 'You May Also Like' sections."
 
+    def scraper_url_to_markdown(self, url: str) -> str:
+        """Scrape a single urls markdown"""
+        logger.debug("Starting %s", inspect.stack()[0][3], url=url)
+        markdown = self.client.scrape(url=url, 
+            formats=["markdown"],
+            only_main_content=True,
+            exclude_tags=excludeTag,
+            remove_base64_images=True
+        )
+        return markdown.markdown.replace("\n", "")
+
+    def batch_scraper_url_to_markdown(self, urls: List[str]) -> list[str]:
+        """Batch scraping urls"""
+        logger.debug("Starting %s", inspect.stack()[0][3], urls=urls)
+        markdowns = self.client.batch_scrape(urls, 
+            formats=["markdown"], wait_timeout=120,
+            only_main_content=True,
+            exclude_tags=excludeTag,
+            remove_base64_images=True
+        )
+        return [item.markdown.replace("\n", "") for item in markdowns.data]
+
     def scrape_and_search_site(self, query: str, limit: int = 5):
         """Some filtering x business logic in the concrete due to the size of response, structured response helps LLM as well"""
         logger.debug("Starting scraper", query=query, length_of_urls=limit)
 
-        # this country code can change with an input param
-        query_users_country = f"{query} :.au"
-
         if limit > 10:
             raise ValueError("Limit on pages cant be greater than 10 due to cost principle")
 
-        excludeTag = [
-            # Navigation & UI
-            "header", "footer", "nav", "aside",
-            ".skip-to-content", ".skip-link",
-            ".cart", ".mini-cart", "#cart",
-            ".search-bar", ".search-form",
-            # Product variants/gallery (THE BIG ONE)
-            ".variant-selector", ".color-swatches",
-            ".size-selector", ".flavor-selector",
-            # Reviews & Social
-            ".reviews", "#reviews", ".customer-reviews",
-            ".rating", ".star-rating",
-            ".questions-and-answers", "#comments",
-            ".related-products", ".upsell", ".recommendations",
-            ".recently-viewed", ".you-may-like",
-            ".newsletter", ".social-share", ".ads",
-            # Navigation cruft
-            ".breadcrumb", ".footer-links",
-            ".pop-up", ".modal", ".overlay",
-            # Common Shopify classes
-            ".product-form__buttons",
-            ".product-option",
-        ]
-
         search = self.client.search(
-            query = query_users_country,
+            query = query,
             limit = limit,
             scrape_options = ScrapeOptions(
                 only_main_content=True,
@@ -96,14 +122,14 @@ class FirecrawlClient:
             query = query,
         )
 
-    def get_urls_for_query(self, query: str, limit: int = 5):
+    def get_urls_for_query(self, query: str, limit: int = 5) -> list:
         """A function to get urls from our scraper dependency"""
         logger.debug("Starting %s", inspect.stack()[0][3])
         query_with_location = f"{query} :.au"
 
         search_data = self.client.search(query=query_with_location, limit=limit,
             location="Sydney, Australia")
-        return search_data
+        return search_data.web
 
     def extract_from_url(self, url: str, prompt: str = None):
         """Extracting from Firecrawls smart extract"""

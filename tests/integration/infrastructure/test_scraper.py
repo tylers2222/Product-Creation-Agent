@@ -1,51 +1,11 @@
-"""
-Tests for Firecrawl scraper client.
-
-Unit tests use mock client, integration tests use real Firecrawl API.
-"""
-import json
-import os
-from dotenv import load_dotenv
 import pytest
-from firecrawl.types import SearchData, SearchResultWeb
-from product_agent.infrastructure.firecrawl.client import FirecrawlClient, KadoaScraper
+import os
+import json
+from dotenv import load_dotenv
+
+from product_agent.infrastructure.firecrawl.client import KadoaScraper, FirecrawlClient
 from product_agent.infrastructure.firecrawl.schemas import FireResult
-
-# -----------------------------------------------------------------------------
-# Unit Tests
-# -----------------------------------------------------------------------------
-
-class TestFirecrawlClient:
-    """Unit tests for the Firecrawl scraper client."""
-
-    def test_scrape_and_search_returns_fire_result(self, mock_scraper):
-        """Test that scrape_and_search_site returns a FireResult."""
-        result = mock_scraper.scrape_and_search_site(query="Test query")
-
-        assert result is not None
-        assert isinstance(result, FireResult)
-
-    def test_fire_result_has_data(self, mock_scraper):
-        """Test that FireResult contains data."""
-        result = mock_scraper.scrape_and_search_site(query="Test query")
-
-        assert result.data is not None
-
-    def test_fire_result_has_query(self, mock_scraper):
-        """Test that FireResult contains the query."""
-        query = "Optimum Nutrition Whey"
-        result = mock_scraper.scrape_and_search_site(query=query)
-
-        assert result.query is not None
-
-    def test_fire_result_data_has_web_results(self, mock_scraper):
-        """Test that FireResult data contains web results."""
-        result = mock_scraper.scrape_and_search_site(query="Test query")
-
-        assert hasattr(result.data, 'web')
-        assert result.data.web is not None
-        assert len(result.data.web) > 0
-
+from firecrawl.types import SearchData, SearchResultWeb
 
 # -----------------------------------------------------------------------------
 # Integration Tests
@@ -67,6 +27,44 @@ class TestFirecrawlClientIntegration:
         load_dotenv()
         return FirecrawlClient(api_key=os.getenv("FIRECRAWL_API_KEY"))
 
+    def test_single_url_scrape(self, real_scraper):
+        """
+        Testing a single scraped url
+        Turns a url into its markdown
+        """
+        url = "https://www.optimumnutrition.com/en-us/products/gold-standard-100-whey-protein-powder"
+        response = real_scraper.scraper_url_to_markdown(url)
+        assert response is not None
+        print("Dir: ", dir(response))
+        print()
+        print("Type: ", type(response))
+        print()
+        print(response)
+
+    def test_single_url_scrape_different_models(self):
+        """ 
+        Test multiple models in the same provider
+        Found some models of gemini werent omitting what i wanted
+        had a markdown, had somethings that werent being added
+        Gemini 2.0 Flash was the original model
+        """
+        
+
+    def test_batch_scrape(self, real_scraper):
+        urls = [
+            "https://www.evelynfaye.com.au/products/ehp-labs-acetyl-l-carnitine",
+            "https://www.nutritionwarehouse.com.au/products/gold-standard-100-whey-by-optimum-nutrition?variant=42556493856995"
+        ]
+
+        response = real_scraper.batch_scraper_url_to_markdown(urls)
+        assert response is not None
+        print("Dir: ", dir(response))
+        print()
+        print("Type: ", type(response))
+        print()
+        for markdown in response:
+            print("\n\n", markdown)
+
     def test_real_scrape_returns_results(self, real_scraper):
         """Test that real scraping returns results."""
         query = "Optimum Nutrition Whey Protein"
@@ -76,6 +74,7 @@ class TestFirecrawlClientIntegration:
         assert result is not None
         assert isinstance(result, FireResult)
         assert result.data is not None
+
 
     def test_real_scrape_web_results_have_markdown(self, real_scraper):
         """Test that web results contain markdown content."""
@@ -115,6 +114,10 @@ class TestFirecrawlClientIntegration:
         query = "Optimum Nutrition Gold Standard 100% Whey buy online"
         urls = real_scraper.get_urls_for_query(query=query)
         assert urls is not None
+        print("Dir: ", dir(urls))
+        print()
+        print("Type: ", type(urls))
+        print()
         print(urls)
 
     def test_extracting_url(self, real_scraper):

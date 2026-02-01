@@ -6,7 +6,6 @@ from langchain_classic.agents import AgentExecutor
 from langchain_core.output_parsers import PydanticOutputParser
 from qdrant_client.models import PointStruct
 
-from .helpers import search_products_comprehensive
 
 from product_agent.config import ServiceContainer, agents
 
@@ -18,9 +17,12 @@ from product_agent.infrastructure.llm.prompts import PromptVariant, markdown_sum
 from product_agent.infrastructure.synthesis.agent import Agent
 from product_agent.infrastructure.shopify.schemas import DraftProduct, DraftResponse
 
-from product_agent.services.vector_search import SimilarityResult, product_similarity_threshold_svc
-from product_agent.services.scraping import scrape_results_svc
+from product_agent.services.infrastructure.vector_search import SimilarityResult, product_similarity_threshold_svc
+from product_agent.services.infrastructure.scraping import scrape_results_svc
 from product_agent.services.schemas import ProductExists
+from product_agent.models.llm_input import LLMInput
+
+from product_agent.services.orchestrators.product_search import search_products_comprehensive
 
 logger = structlog.getLogger(__name__)
 
@@ -36,7 +38,7 @@ class ShopifyProductCreateService:
         Retry On Specific Errors for nodes
     """
     def __init__(self, sc: ServiceContainer, synthesis_agent: Agent):
-        self.llm = sc.llm
+        self.llm = sc.llm["open_ai"]
         self.shop = sc.shop
         self.scraper = sc.scraper
         self.vector_db = sc.vector_db
@@ -44,7 +46,7 @@ class ShopifyProductCreateService:
 
         self.synthesis_agent = synthesis_agent
         
-    def query_extract(self, query: PromptVariant) -> QueryResponse:
+    async def query_extract(self, query: PromptVariant) -> QueryResponse:
         """
         First node that ensures quality when searching google via the scraper
         Returns:
@@ -63,7 +65,14 @@ STEP 1: Synthesise the incoming request for google search
 If you think {brand_product}
 Is going to produce the best google results, leave it as is {brand_product}, otherwise formulate the best string to search for shops selling it, so we can scrape them
 """
-        llm_response = self.llm.invoke_mini(system_query = None, user_query=prompt, response_schema=QueryResponse)
+        llm_input = LLMInput(
+            model="mini_deterministic",
+            system_query=None,
+            user_query=prompt,
+            response_schema=QueryResponse,
+            verbose=False
+        )
+        llm_response = await self.llm.invoke(llm_input)
         llm_response.brand_product = brand_product
 
         logger.debug("query_response: %s", llm_response)
@@ -175,7 +184,7 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
         return resp
 
 
-    def fill_data(self, validated_data: dict, web_scraped_data: ScraperResponse, similar_products: list[PointStruct]):
+    async def fill_data(self, validated_data: dict, web_scraped_data: ScraperResponse, similar_products: list[PointStruct]):
         logger.debug("Starting %s", inspect.stack()[0][3])
 
         prompt = f"""CREATE PRODUCT LISTING
@@ -220,9 +229,16 @@ EXAMPLE - If similar products have:
 - Tags: ["Protein", "Whey", "Sports Nutrition"]
 
 Then use the SAME style for your product.
-""" 
+"""
 
-        fill_response = self.llm.invoke_max(user_query=prompt, response_schema=DraftProduct)
+        llm_input = LLMInput(
+            model="max_deterministic",
+            system_query=None,
+            user_query=prompt,
+            response_schema=DraftProduct,
+            verbose=False
+        )
+        fill_response = await self.llm.invoke(llm_input)
         logger.debug("LLM completed draft product data", fill_response=fill_response)
         return fill_response
 

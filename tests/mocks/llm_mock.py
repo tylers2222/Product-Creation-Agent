@@ -1,39 +1,37 @@
 from typing import Type
 from pydantic import BaseModel
 from polyfactory.factories.pydantic_factory import ModelFactory
+from src.product_agent.models.llm_input import LLMInput
 
 class MockLLM:
     """Mock LLM client that returns deterministic responses for testing."""
 
     def __init__(self):
-        self.invoke_mini_call_count = 0
-        self.invoke_max_call_count = 0
+        self.invoke_call_count = 0
+        self.last_model_used = None
 
-    def invoke_mini(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
-        """Mock invoke_mini that returns a deterministic response."""
-        self.invoke_mini_call_count += 1
+    def invoke(self, llm_input: LLMInput) -> str | BaseModel:
+        """
+        Mock invoke that returns a deterministic response.
 
-        if response_schema:
+        Tracks which model was requested and returns appropriate test data.
+        """
+        self.invoke_call_count += 1
+        self.last_model_used = llm_input.model
+
+        if llm_input.response_schema:
             class FactoryResponse(ModelFactory):
                 """Assisting the factories library"""
-                __model__ = response_schema
-            
+                __model__ = llm_input.response_schema
+
             result = FactoryResponse.build()
             return result
 
-        return '{"query": "Create a draft product", "extract_query": "Optimum Nutrition", "validated_data": {"variant": "test"}}'
+        # Return different responses based on model type for backward compatibility
+        if llm_input.model == "mini_deterministic":
+            return '{"query": "Create a draft product", "extract_query": "Optimum Nutrition", "validated_data": {"variant": "test"}}'
 
-    def invoke_max(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
-        """Mock invoke_max that returns a deterministic response."""
-        self.invoke_max_call_count += 1
-        if response_schema:
-            class FactoryResponse(ModelFactory):
-                """Assisting the factories library"""
-                __model__ = response_schema
-            
-            result = FactoryResponse.build()
-            return result
-
+        # Default/max_deterministic response
         return '''{
     "title": "Test Product",
     "description": "<h2>Test Description</h2><p>This is a test product.</p>",

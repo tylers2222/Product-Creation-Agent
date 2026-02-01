@@ -1,6 +1,5 @@
 from langchain.tools import tool
 import pytest
-from ...config import real_service_container
 from src.product_agent.config.agents.builder import AgentFactory
 from src.product_agent.config.agents.config import AgentConfig
 
@@ -12,7 +11,7 @@ def add(x: int, y: int) -> int:
 @pytest.mark.integration
 class TestAgentBuilder:
     @pytest.fixture
-    def factory(self):
+    def factory(self, real_service_container):
         """Build the service container"""
         return AgentFactory(real_service_container)
 

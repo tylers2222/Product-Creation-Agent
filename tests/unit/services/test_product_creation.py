@@ -6,7 +6,7 @@ Uses standardized TestCase pattern with data + expected results.
 import pytest
 from pydantic import BaseModel
 
-from product_agent.services.product_creation import ShopifyProductCreateService
+from product_agent.services.agent_workflows.product_creation import ShopifyProductCreateService
 from product_agent.models.query import QueryResponse
 from product_agent.services.schemas import ProductExists
 from tests.mocks.synthesis_mock import MockSynthesisAgent
@@ -28,7 +28,8 @@ class TestMockShopifyProductCreateService:
     # Query Extract Node
     #--------------------------------------------------------
 
-    def test_query_extract(self, workflow, tc_query_extract):
+    @pytest.mark.asyncio
+    async def test_query_extract(self, workflow, tc_query_extract):
         """
         Test query extraction reformulates search query.
 
@@ -39,7 +40,7 @@ class TestMockShopifyProductCreateService:
         """
         tc = tc_query_extract
 
-        result = workflow.query_extract(
+        result = await workflow.query_extract(
             query=tc.data["query"]
         )
 
@@ -158,13 +159,14 @@ class TestIntegrationProductCreateWorkflow:
         return ShopifyProductCreateService(sc=service_container, synthesis_agent=SynthesisAgent(agent_executor))
 
     @pytest.mark.integration
-    def test_query_extract(self, integration_workflow, tc_query_extract):
+    @pytest.mark.asyncio
+    async def test_query_extract(self, integration_workflow, tc_query_extract):
         """Integration test for query extract"""
         tc = tc_query_extract
         tc_query = tc.data["query"]
         # print("Query: ", tc_query)
 
-        result = integration_workflow.query_extract(
+        result = await integration_workflow.query_extract(
             query=tc_query
         )
 

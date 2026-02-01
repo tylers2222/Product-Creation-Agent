@@ -16,8 +16,8 @@ from product_agent.infrastructure.llm.prompts import format_product_input
 
 from product_agent.api.schemas.request import Job
 from product_agent.api.shared import queue
-from product_agent.api.routes.product_generate import router
-from product_agent.api.internal.consume_task import consume_task
+from product_agent.api.routes.product import router
+from product_agent.api.consumers import consume_task
 
 from product_agent.db.redis import RedisDatabase, KV_DB
 

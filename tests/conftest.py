@@ -21,6 +21,7 @@ from src.product_agent.core.agent_configs.synthesis import SYNTHESIS_CONFIG
 from src.product_agent.config.agents.builder import AgentFactory
 from src.product_agent.infrastructure.mcp.client import MCPClient
 from src.product_agent.infrastructure.mcp.config import mcp_server_config
+from src.product_agent.infrastructure.llm.client import OpenAiClient, GeminiClient
 from src.product_agent.config.agents.config import AgentConfig
 
 from tests.mocks.shopify_mock import MockShop
@@ -173,6 +174,49 @@ async def scraper_agent_with_mcp(real_service_container):
     af = AgentFactory(real_service_container)
     return af.build_custom_agent(conf)
 
+@pytest.fixture
+def real_openai_llm():
+    """Create a real LLM client."""
+    return OpenAiClient(api_key=os.getenv("OPENAI_API_KEY"))
+
+@pytest.fixture
+def real_gemini_llm():
+    return GeminiClient(api_key=os.getenv("GEMINI_API_KEY"))
+
+@pytest.fixture
+def gemini_models():
+    """
+    Fixture providing stable Gemini model names for production use.
+
+    Note:
+    - Gemini 3 preview models require global endpoints (not us-central1)
+    - Gemini 2.0 models will be deprecated on March 3, 2026
+    - Gemini 2.5 series is production-ready and works on regional endpoints
+    """
+    return [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+    ]
+
+@pytest.fixture
+def gemini_preview_models():
+    """
+    Fixture for Gemini 3 preview models.
+
+    WARNING: Gemini 3 models are NOT available on Vertex AI.
+    They only work with the Google AI API (ai.google.dev).
+
+    To use these, you'd need to switch from vertexai=True to the consumer API,
+    which loses enterprise features (VPC, IAM, SLAs, audit logs).
+
+    For production multi-tenant systems, stick with gemini_models fixture.
+    """
+    return [
+        "gemini-3-pro-preview",  # Only on Google AI API
+        "gemini-3-flash-preview",  # Only on Google AI API
+    ]
+
 # -----------------------------------------------------------------------------
 # Sample Test Data Fixtures
 # -----------------------------------------------------------------------------
@@ -283,6 +327,12 @@ def sample_point_struct():
         payload={"id": "test_product", "title": "Test Product"}
     )
 
+@pytest.fixture
+def search_strs():
+    """Fixture providing some products to search for"""
+    return [
+        "Optimum Nutrition 100% Gold Standard Whey"
+    ]
 
 # -----------------------------------------------------------------------------
 # Test Document Fixtures

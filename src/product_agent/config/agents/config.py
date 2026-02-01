@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -9,8 +9,8 @@ class AgentConfig:
     name: str
     model: str
     temperature: float
-    system_prompt: str | None
     tools: list
+    system_prompt: str | None = None
 
     @classmethod
     def build_agent_config(cls, name: str,

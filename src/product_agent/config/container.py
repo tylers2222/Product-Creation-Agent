@@ -6,13 +6,14 @@ to build containers with real or mock implementations.
 """
 import os
 from dataclasses import dataclass
+from typing import Dict
 from dotenv import load_dotenv
 
 from product_agent.infrastructure.firecrawl.client import FirecrawlClient, Scraper
 from product_agent.infrastructure.shopify.client import ShopifyClient, Shop, Locations, Location
 from product_agent.infrastructure.vector_db.client import vector_database, VectorDb
 from product_agent.infrastructure.vector_db.embeddings import Embeddings, Embeddor
-from product_agent.infrastructure.llm.client import open_ai_client, LLM
+from product_agent.infrastructure.llm.client import LLM, OpenAiClient, GeminiClient
 
 load_dotenv()
 
@@ -30,7 +31,7 @@ class ServiceContainer:
     scraper: Scraper
     vector_db: VectorDb
     embeddor: Embeddor
-    llm: LLM
+    llm: Dict[str, LLM]
 
 
 def _get_required_env(key: str) -> str:
@@ -70,8 +71,10 @@ def build_service_container() -> ServiceContainer:
         api_key=_get_required_env("QDRANT_API_KEY")
     )
     embeddor = Embeddings()
-    llm = open_ai_client()
-
+    llm = {
+        "open_ai": OpenAiClient(api_key=_get_required_env("OPENAI_API_KEY")),
+        "gemini": GeminiClient(api_key=_get_required_env("GEMINI_API_KEY"))
+    }
     return ServiceContainer(
         shop=shop,
         scraper=scraper,
@@ -95,6 +98,6 @@ def build_mock_service_container() -> ServiceContainer:
         scraper=Mock(spec=Scraper),
         vector_db=Mock(spec=VectorDb),
         embeddor=Mock(spec=Embeddor),
-        llm=Mock(spec=LLM)
+        llm={"open_ai": Mock(spec=LLM), "gemini": Mock(spec=LLM)}
     )
 

@@ -10,6 +10,7 @@ import datetime
 
 from .prompts import markdown_summariser_prompt, mardown_summariser_system_prompt, GEMINI_MARKDOWN_SUMMARISER_PROMPT
 from .utils import _parse_response
+from ...models.llm_input import LLMInput
 
 logger = structlog.get_logger(__name__)
 
@@ -17,31 +18,40 @@ class LLMError(Exception):
     pass
 
 class LLM(Protocol):
-    """A """
-    def invoke_mini(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
+    """A Protocol defining the methods an LLM should have"""
+    async def invoke(self, llm_input: LLMInput) -> str | BaseModel:
         ...
 
-    def invoke_max(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
-        ...
-
-class open_ai_client:
+class OpenAiClient:
     """A concrete impl of the open ai LLM's"""
-    def __init__(self):
-        self.llm_mini_deterministic = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.1,
-            verbose=False
-        )
+    def __init__(self, api_key: str):
+        self._model_configs = {
+            "scraper_mini": {
+                "model": "gpt-4o-mini",
+                "temperature": 0.1,
+            },
+            "max_deterministic": {
+                "model": "gpt-4o",
+                "temperature": 0.1,
+            }
+        }
 
-        self.llm_max_deterministic = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.1,
-            verbose=False
-        )
+        self._api_key = api_key
+        logger.info("Initialised OpenAiClient")
 
-        logger.info("Initialised open_ai_client")
+    def _resolve_model(self, model: str):
+        """
+        Resolve what model we want to use
+        
+        Sometimes a part of the codebase just wants to resolve to the best scraper
+        and doesnt want to config a model specifically just connect to "scraper"
+        """
+        if "-" not in model:
+            return self._model_configs[model]["model"]
+        
+        return model
 
-    def invoke_mini(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
+    async def invoke(self, llm_input: LLMInput) -> str | BaseModel:
         """ 
         Args:
             system_query: If you want to specify a query that the system acts like
@@ -51,95 +61,108 @@ class open_ai_client:
 
             model_repsonse: A pydantic model to structure the response into
         """
-        logger.debug("Started invoke_mini class function", system_query= system_query is not None, response_schema=response_schema is not None)
+        logger.debug("Starting %s", inspect.stack()[0][3],
+            llm_model=llm_input.model,
+            system_query=llm_input.system_query is not None,
+            cache_wanted=llm_input.cache_wanted,
+        )
+        model = self._resolve_model(llm_input.model)
+
+        model = self._resolve_model(llm_input.model)
+        llm_input.model = model
+        model_object = ChatOpenAI(
+            model=llm_input.model,
+            verbose=llm_input.verbose,
+            api_key=self._api_key
+        )
         
-        if response_schema:
-            output_parser = PydanticOutputParser(pydantic_object=response_schema)
+        if llm_input.response_schema:
+            output_parser = PydanticOutputParser(pydantic_object=llm_input.response_schema)
             instructions = output_parser.get_format_instructions()
 
-            user_query += f"\n\n{instructions}"
+            llm_input.user_query += f"\n\n{instructions}"
 
         invocation: list[dict] = []
-        if system_query is not None:
-            invocation.append({"role": "system", "content": system_query})
+        if llm_input.system_query is not None:
+            invocation.append({"role": "system", "content": llm_input.system_query})
 
-        invocation.append({"role": "user", "content": user_query})
+        invocation.append({"role": "user", "content": llm_input.user_query})
 
-        result = self.llm_mini_deterministic.invoke(invocation)
+        result = model_object.invoke(invocation)
         if result is None:
             raise LLMError("No result returned from LLM")
 
-        if response_schema:
+        if llm_input.response_schema:
             parsed_response = _parse_response(llm_response=result.content, parser=output_parser)
             logger.debug("LLM Mini Result", result=parsed_response.model_dump_json())
             return parsed_response
 
         logger.debug("LLM Mini Result", result=result.content)
+        # Theres also meta data there if its wanted including tokens used etc
         return result.content
 
-    def invoke_max(self, system_query: str | None, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
-        if response_schema:
-            output_parser = PydanticOutputParser(pydantic_object=response_schema)
-            instructions = output_parser.get_format_instructions()
-
-            user_query += f"\n\n{instructions}"
-
-        invocation: list[dict] = []
-        if system_query is not None:
-            invocation.append({"role": "system", "content": system_query})
-
-        invocation.append({"role": "user", "content": user_query})
-
-        result = self.llm_max_deterministic.invoke(invocation)
-        if result is None:
-            raise LLMError("No result returned from LLM")
-
-        if response_schema:
-            parsed_response = _parse_response(llm_response=result.content, parser=output_parser)
-            logger.debug("LLM Max Result", result=parsed_response.model_dump_json())
-            return parsed_response
-
-        logger.debug("LLM Max Result", result=result.content)
-        return result.content
-
-class MarkdownLLM:
-    """A class that holds concrete markdown specific impls"""
+class GeminiClient:
+    """A class that holds concrete gemini specific impls"""
     def __init__(self, api_key: str):
-        self.api_client = genai.Client(api_key=api_key)
-        self.system_cache_name = "markdown_summariser"
+        self.api_client = genai.Client(
+            vertexai=True,
+            project="gen-lang-client-0384813764",
+            location="us-central1"
+        )
+        self.system_cache_name = "scraper_prompt"
 
-    def _generate_cache(self):
+        self._model_configs = {
+            "scraper_mini": {
+                "model": "gemini-2.5-flash",
+                "temperature": 0.1,
+            }
+        }
+
+    def _generate_cache(self, system_prompt: str, time_wanted: int):
         logger.debug("Starting %s", inspect.stack()[0][3])
 
         system_cache = self.api_client.caches.create(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             config=types.CreateCachedContentConfig(
-                system_instruction=GEMINI_MARKDOWN_SUMMARISER_PROMPT,
-                display_name="markdown_summariser",
-                ttl=datetime.timedelta(days=30)
+                system_instruction=system_prompt,
+                display_name="scraper_prompt",
+                ttl=datetime.timedelta(minutes=time_wanted)
             )
         )
         return system_cache
 
-    def invoke_mini(self, user_query: str, response_schema: Type[BaseModel] | None = None) -> str | BaseModel:
-        logger.debug("Starting %s", inspect.stack()[0][3])
+    async def invoke(self, llm_input: LLMInput) -> str | BaseModel:
+        """
+        Invoke Gemini model with given input.
+
+        Args:
+            llm_input: LLMInput containing query and optional schema
+            cache_wanted: Does this run want to use a cached system prompt
+
+        Returns:
+            String response or structured BaseModel
+        """
+        logger.debug("Starting %s", inspect.stack()[0][3],
+            llm_model=llm_input.model,
+            system_query=llm_input.system_query is not None,
+            cache_wanted=llm_input.cache_wanted,
+        )
+
+        if "-" not in llm_input.model:
+            llm_input.model = self._model_configs[llm_input.model]["model"]
+
+        if llm_input.cache_wanted:
+            self._generate_cache(system_prompt=llm_input.system_query, time_wanted=5)
 
         response = self.api_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_query,
+            model=llm_input.model,
+            contents=llm_input.user_query,
             config=types.GenerateContentConfig(
-                cached_content=self.system_cache_name,
+                system_instruction=llm_input.system_query if llm_input.system_query else None,
+                cached_content=self.system_cache_name if llm_input.cache_wanted else None,
+                temperature=0.1
             )
         )
-        logger.debug("Completed %s", inspect.stack()[0][3])
+
+        logger.debug("Completed %s", inspect.stack()[0][3], cached_tokens_used=response.usage_metadata.cached_content_token_count)
         return response
-
-def markdown_summariser(title: str, markdown: str, llm: LLM) -> str:
-    """Title: what we want to find in the markdown, Markdown is the str we want to find it in"""
-    logger.debug("Started markdown_summariser function")
-    logger.debug("Markdown is %s char long", len(markdown))
-    user_query = markdown_summariser_prompt(title=title, markdown=markdown)
-    response = llm.invoke_mini(system_query=mardown_summariser_system_prompt, user_query=user_query)
-
-    logger.debug("LLM Max Result", result=response)
-    return response  # invoke_mini already returns a string

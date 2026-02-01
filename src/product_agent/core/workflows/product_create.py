@@ -1,26 +1,17 @@
 from typing import Protocol, TypedDict
 import json
-from pydantic import BaseModel, Field
+from product_agent.infrastructure.llm.prompts import PromptVariant
 import structlog
 
 from langgraph.graph import START, StateGraph, END
 from qdrant_client.models import PointStruct
 from product_agent.infrastructure.shopify.schemas import DraftProduct, DraftResponse
-from product_agent.infrastructure.shopify.client import Shop
-from product_agent.infrastructure.firecrawl.client import Scraper
-from product_agent.infrastructure.vector_db.client import VectorDb
-from product_agent.infrastructure.vector_db.embeddings import Embeddor, Embeddings
-from product_agent.infrastructure.vector_db.client import vector_database
-from product_agent.infrastructure.firecrawl.client import FirecrawlClient
-from product_agent.infrastructure.shopify.client import ShopifyClient
 from langchain_core.output_parsers import PydanticOutputParser
-from product_agent.infrastructure.llm.client import open_ai_client, LLM
-from product_agent.infrastructure.llm.prompts import PromptVariant, markdown_summariser_prompt
 from product_agent.core.agent_configs.synthesis import SYNTHESIS_CONFIG
 from product_agent.config import build_service_container, ServiceContainer, build_synthesis_agent
 
-from product_agent.services.product_creation import ShopifyProductCreateService
-from product_agent.services.vector_search import product_similarity_threshold_svc
+from product_agent.services.agent_workflows.product_creation import ShopifyProductCreateService
+from product_agent.services.infrastructure.vector_search import product_similarity_threshold_svc
 from product_agent.models.scraper import ScraperResponse
 
 logger = structlog.get_logger(__name__)
@@ -32,17 +23,16 @@ class AgentProtocol(Protocol):
 
 class AgentState(TypedDict):
     """State of agent operations"""
-    request_id: str
-    query: PromptVariant # the original query the user writes
-    adapted_search_string: str # the upgraded google search query
-    validated_data: dict # dictionary representation of the product and its internal data
-    web_scraped_data: ScraperResponse # the result of the web scraping operation
-    similar_products: list[PointStruct]
-    filled_data: DraftProduct # fill the draft struct with draft data
-    shopify_response: DraftResponse
-    inventory_filled: bool
+    request_id:             str
+    query:                  PromptVariant # the original query the user writes
+    adapted_search_string:  str # the upgraded google search query
+    validated_data:         dict # dictionary representation of the product and its internal data
+    web_scraped_data:       ScraperResponse # the result of the web scraping operation
+    similar_products:       list[PointStruct]
+    filled_data:            DraftProduct # fill the draft struct with draft data
+    shopify_response:       DraftResponse
+    inventory_filled:       bool
 
-# Main LLM Client Class
 class ShopifyProductWorkflow:
     def __init__(self, container: ServiceContainer):
         """
@@ -58,14 +48,13 @@ class ShopifyProductWorkflow:
         self.scraper = container.scraper
         self.vector_db = container.vector_db
         self.embeddor = container.embeddor
-        self.llm = container.llm
+        self.llm = container.llm["open_ai"]
 
-        self.workflow = StateGraph(AgentState)
         self.product_create_service = ShopifyProductCreateService(sc=container, tools=None)
 
-        # Build synthesis agent using factory
         self.agent = build_synthesis_agent(container, SYNTHESIS_CONFIG)
 
+        self.workflow = StateGraph(AgentState)
         self.workflow.add_node("query_extract", self.query_extract)
         self.workflow.add_node("query_scrape", self.query_scrape)
         self.workflow.add_node("query_synthesis", self.query_synthesis)
@@ -84,7 +73,7 @@ class ShopifyProductWorkflow:
         self.app = self.workflow.compile()
         logger.info("Successfully initialised ShopifyProductWorkflow class")
 
-    def query_extract(self, state: AgentState):
+    async def query_extract(self, state: AgentState):
         request_id = state.get("request_id", None)
         if request_id is None:
             logger.error("No request id retrieved", state=state)
@@ -94,7 +83,7 @@ class ShopifyProductWorkflow:
         if query is None:
             logger.error("No Query schema recieved", state=state)
 
-        query_response = self.product_create_service.query_extract(request_id, query)
+        query_response = await self.product_create_service.query_extract(request_id, query)
         return {
             "adapted_search_string": query_response.adapted_search_string,
         }
@@ -190,7 +179,7 @@ IMPORTANT: If you need to call get_similar_products, DO IT NOW before returning 
             "similar_products": similar_products
         }
 
-    def fill_data(self, state: AgentState):
+    async def fill_data(self, state: AgentState):
         """A node that builds out the draft product for our shopify store"""
         request_id = state.get("request_id", None)
         logger.debug("Started fill_data node", request_id=request_id if request_id else "Unknown")
@@ -241,8 +230,15 @@ EXAMPLE - If similar products have:
 
 Then use the SAME style for your product.
 """
-        fill_data_response_text = self.llm.invoke_max(system_query=None, 
-            user_query=prompt, response_schema=DraftProduct)
+        from ..models.llm_input import LLMInput
+        llm_input = LLMInput(
+            model="max_deterministic",
+            system_query=None,
+            user_query=prompt,
+            response_schema=DraftProduct,
+            verbose=False
+        )
+        fill_data_response_text = await self.llm.invoke(llm_input)
 
         logger.debug("Fill Data Response: %s", fill_data_response)
         logger.info("Completed fill_data", request_id=request_id if request_id else "Unknown")
