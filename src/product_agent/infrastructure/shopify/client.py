@@ -1,10 +1,9 @@
 import datetime
 import structlog
 from pydantic import BaseModel
-import shopify
-import requests
+import httpx
 from typing import Literal, Protocol
-from .schemas import DraftProduct, DraftResponse, Fields, AllShopifyProducts, ShopifyProductSchema
+from product_agent.models.shopify import DraftProduct, DraftResponse, Fields, AllShopifyProducts, ShopifyProductSchema
 from .types import Inventory, Inputs, SkuSearchResponse, Product
 from .exceptions import ShopifyError
 
@@ -26,7 +25,7 @@ class Shop(Protocol):
 
 class Location(BaseModel):
     """A singular location"""
-    name: Literal["City", "South Melbourne"]
+    name: str
     id: str
 
 class Locations(BaseModel):
@@ -34,6 +33,7 @@ class Locations(BaseModel):
     locations: list[Location]
 
     def create_map(self) -> dict:
+        """Create a map for the locations"""
         result = {}
         for location in self.locations:
             result[location.name] = location.id
@@ -41,93 +41,117 @@ class Locations(BaseModel):
         return result
 
 class ShopifyClient:
-    def __init__(self, api_key: str, api_secret: str, token: str, shop_url: str, shop_name: str, locations: Locations):
+    """Shopify class and its methods"""
+    def __init__(
+        self,
+        locations: Locations,
+        access_token: str,
+        shop_name: str,
+        api_version: str = "2024-10"
+    ):
+        """Init the shopify class"""
         logger.debug("Initialising Shopify Client...")
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.access_token = token
-        self.shop_url = shop_url
+        self.locations = locations
+        self.locations_map = locations.create_map()
+        self.access_token = access_token
         self.shop_name = shop_name
-        self.graph_url = f"https://{shop_url}/admin/api/2024-01/graphql.json"
-        self.locations = locations.create_map()
-        self.location_list = locations.locations
-        session = shopify.Session(
-            shop_url=f"{shop_name}/myshopify.com",
-            version="2024-10",
-            token=token
-        )
-        self.client = shopify.ShopifyResource.activate_session(session)
+        self.api_version = api_version
+        self.rest_url = f"https://{shop_name}.myshopify.com/admin/api/{api_version}"
+        self.graph_url = f"https://{shop_name}.myshopify.com/admin/api/{api_version}/graphql.json"
+        self._client = None
         logger.info("Initialised Client From Concrete")
 
-    def make_a_product_draft(self, product_listing: DraftProduct) -> DraftResponse:
-        # could make sure the product doesnt already exist, not sure how it works because it needs to be shopify product id rather than the SKU
-        # potentially could just make the draft and then on review in shopifys Ui it'll say a product with that SKU already exists
+    async def __aenter__(self):
+        """Create HTTP client when entering context"""
+        logger.debug("Creating HTTP client for shop", shop_name=self.shop_name)
+        self._client = httpx.AsyncClient(timeout=30.0)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Close HTTP client when exiting context"""
+        logger.debug("Closing HTTP client for shop", shop_name=self.shop_name)
+        await self._client.aclose()
+        return False
+
+    async def make_a_product_draft(self, product_listing: DraftProduct) -> DraftResponse:
+        """Create a product draft via Shopify REST API"""
         logger.debug("Started make_a_product_draft", draft_product=product_listing.model_dump_json())
         product_listing.validate_length()
 
-        # Create blank canvas shopify product
-        product = shopify.Product()
-
-        product.title = product_listing.title.title()
-        product.body_html = product_listing.description
-        product.product_type = product_listing.type.title()
-        product.vendor = product_listing.vendor.title()
-        product.tags = product_listing.tags
-        product.status = "draft"
-
-        # pydantic model need to serialise it explicitly
-        options = product_listing.options
-        product.options = options
-
+        # Build variants JSON
         variants = []
+        options = product_listing.options
         for variant_listing in product_listing.variants:
-            variant = shopify.Variant()
-
-            variant.option1 = variant_listing.option1_value.option_value
+            variant_data = {
+                "option1": variant_listing.option1_value.option_value,
+                "price": str(variant_listing.price),
+                "sku": variant_listing.sku,
+                "barcode": variant_listing.barcode,
+                "weight": variant_listing.product_weight,
+                "weight_unit": "kg",
+                "inventory_management": "shopify"
+            }
 
             if len(options) > 1 and variant_listing.option2_value:
-                variant.option2 = variant_listing.option2_value.option_value
-            
-            if len(options) > 2 and variant_listing.option3_value:
-                variant.option3 = variant_listing.option3_value.option_value
-            
-            variant.price = str(variant_listing.price)
-            variant.sku = variant_listing.sku
-            variant.barcode = variant_listing.barcode
-            if variant_listing.compare_at:
-                # name query what its actually called in the api
-                variant.compare_at_price = str(variant_listing.compare_at)
-            
-            variant.weight = variant_listing.product_weight
-            variant.weight_unit = "kg"
+                variant_data["option2"] = variant_listing.option2_value.option_value
 
-            variant.inventory_management = "shopify"
-            
-            variants.append(variant)
-        
-        product.variants = variants
-        success = product.save()
-        if not success:
-            logger.error("Failed to create product", product_listing_title=product_listing.title, error=product.errors.full_messages())
-            # print(f"\n\nDir on errors method: {dir(product.errors)}")
-            raise ShopifyError("Failed to save draft product")
+            if len(options) > 2 and variant_listing.option3_value:
+                variant_data["option3"] = variant_listing.option3_value.option_value
+
+            if variant_listing.compare_at:
+                variant_data["compare_at_price"] = str(variant_listing.compare_at)
+
+            variants.append(variant_data)
+
+        # Build product JSON payload
+        payload = {
+            "product": {
+                "title": product_listing.title.title(),
+                "body_html": product_listing.description,
+                "product_type": product_listing.type.title(),
+                "vendor": product_listing.vendor.title(),
+                "tags": product_listing.tags,
+                "status": "draft",
+                "options": options,
+                "variants": variants
+            }
+        }
+
+        # Make REST API call
+        headers = {
+            "X-Shopify-Access-Token": self.access_token,
+            "Content-Type": "application/json"
+        }
+
+        response = await self._client.post(
+            f"{self.rest_url}/products.json",
+            headers=headers,
+            json=payload
+        )
+
+        if response.status_code != 201:
+            logger.error("Failed to create product", product_listing_title=product_listing.title, status_code=response.status_code, response=response.text)
+            raise ShopifyError(f"Failed to save draft product: {response.status_code}")
 
         logger.debug("Saved product to shopify")
 
-        product.reload()
-        logger.debug("Reload product to get shopify internal generated data")
+        # Parse response
+        response_data = response.json()
+        product_data = response_data.get("product", {})
+        product_id = product_data.get("id")
+        variants_data = product_data.get("variants", [])
 
-        # have to wait until its saved in the database
-        # it generates an inventory item id when saved not when local
+        logger.debug("Product created", product_id=product_id)
+
+        # Build inventory item IDs from response
         inventory_item_ids = []
-        for idx, variant in enumerate(product.variants):
+        for idx, variant_data in enumerate(variants_data):
             varaiants_inventory_wanted = product_listing.variants[idx].inventory_at_stores
             if varaiants_inventory_wanted is None:
                 continue
-            # may have to design the inventory model to be able to be None on the stores in case of more stores added
-            inventory_model = Inventory(
-                inventory_item_id = str(variant.inventory_item_id),
 
+            inventory_model = Inventory(
+                inventory_item_id = str(variant_data.get("inventory_item_id")),
                 stores = [
                     Inputs(
                         name_of_store="City",
@@ -143,17 +167,16 @@ class ShopifyClient:
 
         logger.debug("Retrieved inventory_item_ids", inventory_item_ids=inventory_item_ids, length=len(inventory_item_ids))
 
-        idx = product.id
         return DraftResponse(
             title = product_listing.title,
-            id = str(idx),
+            id = str(product_id),
             variant_inventory_item_ids=inventory_item_ids,
-            url = f"https://admin.shopify.com/store/{self.shop_name}/products/{idx}",
+            url = f"https://admin.shopify.com/store/{self.shop_name}/products/{product_id}",
             time_of_comepletion = datetime.datetime.now(),
-            status_code = 200,
+            status_code = 201,
         )
 
-    def make_available_at_all_locations(self, inventory_item_id: str):
+    async def make_available_at_all_locations(self, inventory_item_id: str):
         """Function to make a product available at every store"""
         logger.debug("Starting make_available_at_all_locations", inventory_item_id=inventory_item_id)
 
@@ -188,13 +211,13 @@ mutation InventoryActivateAtLocation($inventoryItemId: ID!, $locationId: ID!) {
             "Content-Type": "application/json"
         }
 
-        for location in self.location_list:
+        for location in self.locations.locations:
             variables = {
                 "inventoryItemId": inventory_item_id,
                 "locationId": location.id,
             }
 
-            response = requests.post(url=self.graph_url, headers=headers, json={"query": mutation, "variables": variables})
+            response = await self._client.post(url=self.graph_url, headers=headers, json={"query": mutation, "variables": variables})
             if response.status_code != 200:
                 logger.error("incorrect status code %s", response.status_code)
                 return False
@@ -205,12 +228,12 @@ mutation InventoryActivateAtLocation($inventoryItemId: ID!, $locationId: ID!) {
                 logger.error("Errors: %s", errors)
                 return False
 
-            logger.debug("Response Returned", response=response.json())
+            logger.debug("Response Returned", response=response_dict)
 
         logger.info("Complete item assignment to all stores", inventory_item_id=inventory_item_id)
         return True
 
-    def fill_inventory(self, inventory_data: Inventory) -> bool:
+    async def fill_inventory(self, inventory_data: Inventory) -> bool:
         """Hitting the inventory api"""
         logger.debug("Starting inventory service for request - product_id: %s, stores_changing: %s", inventory_data.inventory_item_id, [stores.name_of_store for stores in inventory_data.stores])
 
@@ -230,28 +253,28 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
     }
   }
 }
-"""     
+"""
         headers = {
             "X-Shopify-Access-Token": self.access_token,
             "Content-Type": "application/json"
         }
 
-        made_available_at_all = self.make_available_at_all_locations(inventory_item_id=inventory_data.inventory_item_id)
+        made_available_at_all = await self.make_available_at_all_locations(inventory_item_id=inventory_data.inventory_item_id)
         if not made_available_at_all:
             return
 
         logger.debug("Result Of Making Stores Available: %s", made_available_at_all)
-        
+
         for inventory in inventory_data.stores:
-            # Get the actual location ID from the location name (self.locations is already a dict
-            location_id = self.locations.get(inventory.name_of_store)
+            # Get the actual location ID from the location name
+            location_id = self.locations_map.get(inventory.name_of_store)
             if not location_id:
                 raise ShopifyError(f"Location '{inventory.name_of_store}' not found in locations map")
-            
+
             # Ensure product_id and location_id are in GID format
             inventory_item_gid = inventory_data.inventory_item_id if inventory_data.inventory_item_id.startswith("gid://") else f"gid://shopify/InventoryItem/{inventory_data.inventory_item_id}"
             location_gid = location_id if location_id.startswith("gid://") else f"gid://shopify/Location/{location_id}"
-            
+
             variables = {
                 "input": {
                     "reason": "received",
@@ -267,22 +290,20 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
                 }
             }
 
-            response = requests.post(url=self.graph_url, json={"query": mutation, "variables": variables}, headers=headers)
+            response = await self._client.post(url=self.graph_url, json={"query": mutation, "variables": variables}, headers=headers)
             if response.status_code != 200:
                 logger.error("Response for store %s - Status Code: %s, Body: %s", inventory.name_of_store, response.status_code, response.json(), exc_info=True)
                 raise ShopifyError(f"Bad inventory request status_code {response.status_code}")
 
-            #print(dir(response))
-            #print(f"\n\nResponse Content: {response.content}\n\n")
-            response_dict = response.json() 
+            response_dict = response.json()
             logger.debug("Response Of Query At Location", location=inventory.name_of_store, response=response_dict)
-            
+
             # Check for GraphQL errors
-            errors = response_dict.get("errors", None)  
+            errors = response_dict.get("errors", None)
             if errors:
                 logger.error("GraphQL errors for store %s: %s", inventory.name_of_store, errors, exc_info=True)
                 raise ShopifyError(f"GraphQL errors: {errors}")
-            
+
             data = response_dict.get("data", {})
             inventory_set_result = data.get("inventorySetQuantities", {})
             logger.debug("Set Inventory", inventory_set_result=inventory_set_result, name_of_store=inventory.name_of_store)
@@ -290,37 +311,63 @@ mutation InventorySet($input: InventorySetQuantitiesInput!) {
             if user_errors:
                 logger.error("User errors for store %s: %s", inventory.name_of_store, user_errors, exc_info=True)
                 raise ShopifyError(f"User errors: {user_errors}")
-                
+
             logger.info("Completed request for store: %s, request_data: %s", inventory.name_of_store, response_dict)
 
         return True
 
-    def get_products_from_store(self, fields: Fields | None = None) -> list:
+    async def get_products_from_store(self, fields: Fields | None = None) -> list:
         """Get all the products from a store with specific tags"""
         try:
-            all_products_resource = []
+            all_products = []
 
             logger.debug("Sending with fields", fields=fields)
+
+            # Build query parameters
+            params = {"limit": 250}
             if fields is not None:
-                fields_string = fields.shopify_transform_fields()
-                products = shopify.Product.find(limit=250, fields=fields_string)
-            else :
-                products = shopify.Product.find(limit=250)
+                params["fields"] = fields.shopify_transform_fields()
 
-            if not products:
-                logger.error("Products is None", exc_info=True)
-                return None
+            headers = {
+                "X-Shopify-Access-Token": self.access_token,
+                "Content-Type": "application/json"
+            }
 
-            while products:
-                all_products_resource.extend(products)
+            url = f"{self.rest_url}/products.json"
 
-                if products.has_next_page():
-                    products = products.next_page()
-                else:
+            # Pagination loop
+            while url:
+                response = await self._client.get(url, headers=headers, params=params if url == f"{self.rest_url}/products.json" else None)
+
+                if response.status_code != 200:
+                    logger.error("Failed to get products", status_code=response.status_code, response=response.text)
+                    return None
+
+                response_data = response.json()
+                products = response_data.get("products", [])
+
+                if not products:
                     break
 
-            logger.info("Successfully got all the products", length_product=len(all_products_resource))
-            return [ShopifyProductSchema.from_shopify_resource(product) for product in all_products_resource]
+                all_products.extend(products)
+
+                # Check for next page via Link header
+                link_header = response.headers.get("Link", "")
+                next_url = None
+
+                if link_header:
+                    # Parse Link header for rel="next"
+                    links = link_header.split(",")
+                    for link in links:
+                        if 'rel="next"' in link:
+                            # Extract URL from <...>
+                            next_url = link.split(";")[0].strip()[1:-1]
+                            break
+
+                url = next_url
+
+            logger.info("Successfully got all the products", length_product=len(all_products))
+            return [ShopifyProductSchema.from_rest_api(product) for product in all_products]
 
         except Exception as e:
             logger.error("failed to get shopify products", error=e, exc_info=True)
@@ -357,11 +404,10 @@ query SearchVariantBySku($q: String!) {
             "q": f'sku:"{sku}"'
         }
 
-        response = requests.post(
+        response = await self._client.post(
             url=self.graph_url,
             headers=headers,
-            json={"query": query, "variables": variables},
-            timeout=30
+            json={"query": query, "variables": variables}
         )
 
         if response.status_code != 200:
@@ -384,7 +430,3 @@ query SearchVariantBySku($q: String!) {
         node = edges[0].get("node")
         return SkuSearchResponse(**node) if node else None
 
-    def what_methods_does_a_variant_have(self):
-        """Non protocol function to test logic of the ecommerce api"""
-        variant = shopify.Variant.find(id_=42685314990177)
-        print(variant.inventory_item_id)

@@ -5,7 +5,7 @@ import structlog
 
 from langgraph.graph import START, StateGraph, END
 from qdrant_client.models import PointStruct
-from product_agent.infrastructure.shopify.schemas import DraftProduct, DraftResponse
+from product_agent.models.shopify import DraftProduct, DraftResponse
 from langchain_core.output_parsers import PydanticOutputParser
 from product_agent.core.agent_configs.synthesis import SYNTHESIS_CONFIG
 from product_agent.config import build_service_container, ServiceContainer, build_synthesis_agent
@@ -238,7 +238,8 @@ Then use the SAME style for your product.
             response_schema=DraftProduct,
             verbose=False
         )
-        fill_data_response_text = await self.llm.invoke(llm_input)
+        from product_agent.services.infrastructure.llm import llm_service
+        fill_data_response_text = await llm_service(llm_input, self.llm)
 
         logger.debug("Fill Data Response: %s", fill_data_response)
         logger.info("Completed fill_data", request_id=request_id if request_id else "Unknown")

@@ -10,7 +10,7 @@ class MockLLM:
         self.invoke_call_count = 0
         self.last_model_used = None
 
-    def invoke(self, llm_input: LLMInput) -> str | BaseModel:
+    async def invoke(self, llm_input: LLMInput) -> str | BaseModel:
         """
         Mock invoke that returns a deterministic response.
 

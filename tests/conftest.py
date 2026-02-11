@@ -7,6 +7,7 @@ This module provides:
 - Standardized TestCase pattern for input/expected result pairing
 - pytest configuration (markers, logging)
 """
+from product_agent.config.container import ServiceContainer
 import pytest
 from typing import Any, TypeVar, Generic
 from pydantic import BaseModel
@@ -29,7 +30,10 @@ from tests.mocks.firecrawl_mock import MockScraperClient
 from tests.mocks.vector_db_mock import MockVectorDb
 from tests.mocks.embeddings_mock import MockEmbeddor
 from tests.mocks.llm_mock import MockLLM
-from product_agent.infrastructure.shopify.schemas import (
+from tests.mocks.image_scraper_mock import MockImageScraper
+from tests.mocks import MockSynthesisAgent
+
+from product_agent.models.shopify import (
     DraftProduct, DraftResponse, Variant, Option, InventoryAtStores
 )
 from product_agent.infrastructure.llm.prompts import PromptVariant
@@ -107,6 +111,22 @@ def mock_llm():
     return MockLLM()
 
 @pytest.fixture
+def interally_mocked_service_container():
+    """
+    Build the mock service container with pre defined returns
+
+    This doesnt require config every time, it has return values
+    """
+    return ServiceContainer(
+          shop=MockShop(),
+          scraper=MockScraperClient(),
+          vector_db=MockVectorDb,
+          embeddor=MockEmbeddor(),
+          llm={"open_ai": MockLLM(), "gemini": MockLLM()},
+          image_scraper=MockImageScraper()
+      )
+
+@pytest.fixture
 def mock_service_container():
     """Fixture building a suite of mocked dependencies"""
     return build_mock_service_container()
@@ -129,7 +149,6 @@ def real_synthesis_agent(real_service_container):
 @pytest.fixture
 def mock_synthesis_agent(mock_service_container):
     """Fixture building mock synthesis agent"""
-    from tests.mocks import MockSynthesisAgent
     return MockSynthesisAgent()
 
 @pytest.fixture
@@ -182,6 +201,25 @@ def real_openai_llm():
 @pytest.fixture
 def real_gemini_llm():
     return GeminiClient(api_key=os.getenv("GEMINI_API_KEY"))
+
+@pytest.fixture
+def real_shopify_client():
+    """Create a real Shopify client for integration testing."""
+    from product_agent.infrastructure.shopify.client import ShopifyClient, Locations, Location
+
+    locations = Locations(
+        locations=[
+            Location(name="City", id=f"gid://shopify/Location/{os.getenv('LOCATION_ONE_ID')}"),
+            Location(name="South Melbourne", id=f"gid://shopify/Location/{os.getenv('LOCATION_TWO_ID')}")
+        ]
+    )
+
+    return ShopifyClient(
+        locations=locations,
+        access_token=os.getenv("SHOPIFY_TOKEN"),
+        shop_name=os.getenv("SHOP_NAME"),
+        api_version="2024-10"
+    )
 
 @pytest.fixture
 def gemini_models():
@@ -334,6 +372,123 @@ def search_strs():
         "Optimum Nutrition 100% Gold Standard Whey"
     ]
 
+@pytest.fixture
+def sample_markdowns():
+    """Fixture return mock markdowns"""
+    return [
+        "# Product 1\nGreat product",
+        "# Product 2\nAnother product",
+        "# Product 3\nThird product"
+    ]
+
+@pytest.fixture
+def sample_urls():
+    """Fixture returning sample urls"""
+    return [
+        "https://example.com/product1",
+        "https://example.com/product2",
+        "https://example.com/product3",
+        "https://example.com/product4",
+        "https://example.com/product5",
+        "https://example.com/product6",
+        "https://example.com/product7",
+    ]
+
+@pytest.fixture
+def sample_image_urls():
+    """Return image urls to sample a successful web scrape"""
+    return [
+        'https://m.media-amazon.com/images/I/81RqAUDymlL._AC_UF894,1000_QL80_.jpg',
+        'https://www.shopnaturally.com.au/media/catalog/product/cache/243c8d973406c8ba790e922d417ae651/d/r/dr-bronner-castile-peppermint-946.jpg',
+        'https://m.media-amazon.com/images/I/71fKjPdT-xL._AC_UF894,1000_QL80_.jpg',
+        'https://australianorganicproducts.com.au/cdn/shop/files/Dr._Bronner_s_Pure-Castile_Soap_Liquid_Tea_Tree_946ml_media-01_f5375142-4e42-4f05-bcb8-3646e1ce018c_700x700.jpg?v=1714025452', 'https://govita.com.au/cdn/shop/files/018787777022_1.jpg?v=1767831946'
+    ]
+
+@pytest.fixture
+def mock_image_transformer_data():
+    """
+    Fixture providing mock ImageTransformer data for testing LLM vision queries.
+
+    Simulates a product analysis workflow where images are interspersed with text queries.
+    Includes small mock image bytes to avoid large fixture data.
+    """
+    from product_agent.models.image_transformer import ImageTransformer, Image, Query
+
+    # Create minimal valid JPEG bytes (1x1 pixel red JPEG)
+    # This is a tiny valid JPEG header + data for testing
+    mock_image_bytes_1 = bytes([
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
+        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+        0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x14,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01,
+        0x00, 0x00, 0x3F, 0x00, 0x7F, 0xFF, 0xD9
+    ])
+
+    mock_image_bytes_2 = bytes([
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
+        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+        0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x14,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01,
+        0x00, 0x00, 0x3F, 0x00, 0x7F, 0xFF, 0xD9
+    ])
+
+    return ImageTransformer(
+        order=[
+            Query(query="Analyze the following product images and extract key information:"),
+            Image(
+                url="https://example.com/product-front.jpg",
+                image_bytes=mock_image_bytes_1
+            ),
+            Image(
+                url="https://example.com/product-back.jpg",
+                image_bytes=mock_image_bytes_2
+            ),
+            Query(query="What is the product name, brand, and visible nutritional information?"),
+        ]
+    )
+
+@pytest.fixture
+def real_image_transformer_data():
+    """
+    Fixture providing real ImageTransformer data loaded from test images.
+
+    Loads all 5 test images from tests/integration/infrastructure/images/ folder
+    and wraps them in an ImageTransformer structure for LLM vision queries.
+    """
+    from product_agent.models.image_transformer import ImageTransformer, Image
+    import os
+
+    images_dir = "tests/integration/infrastructure/images"
+    image_files = [f"image_{i}.jpg" for i in range(1, 6)]
+
+    images = []
+    for img_file in image_files:
+        img_path = os.path.join(images_dir, img_file)
+        with open(img_path, "rb") as f:
+            image_bytes = f.read()
+
+        images.append(
+            Image(
+                url=f"test_{img_file}",
+                image_bytes=image_bytes
+            )
+        )
+
+    return ImageTransformer(order=images)
 # -----------------------------------------------------------------------------
 # Test Document Fixtures
 # -----------------------------------------------------------------------------

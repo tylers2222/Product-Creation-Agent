@@ -4,44 +4,25 @@ Tests for LLM client and markdown_summariser function.
 Uses standardized TestCase pattern with data + expected results.
 Unit tests use mock LLM, integration tests use real OpenAI API.
 """
+import random
 import pytest
 import os
+import sys
 from dotenv import load_dotenv
+from unittest.mock import patch, MagicMock
 
-from product_agent.infrastructure.llm.client import markdown_summariser
 from product_agent.models.query import QueryResponse
 from product_agent.infrastructure.llm.client import OpenAiClient
+from product_agent.infrastructure.llm.client import GeminiClient
+from product_agent.models.llm_input import LLMInput
 
 
 # -----------------------------------------------------------------------------
 # Unit Tests
 # -----------------------------------------------------------------------------
 
-class TestMarkdownSummariser:
-    """Unit tests for markdown_summariser function."""
-
-    @pytest.mark.asyncio
-    async def test_returns_summarised_content(self, mock_llm, tc_markdown_summariser):
-        """
-        Test that markdown_summariser returns summarised content.
-
-        Verifies:
-        - Result is not None
-        - Result is a string
-        - Result meets minimum length
-        """
-        tc = tc_markdown_summariser
-
-        result = await markdown_summariser(
-            title=tc.data["title"],
-            markdown=tc.data["markdown"],
-            llm=mock_llm
-        )
-
-        assert result is not None
-        assert isinstance(result, tc.expected["type"])
-        if tc.expected["is_not_empty"]:
-            assert len(result) > 0
+class TestLLMs:
+    """Unit tests for LLM"""
 
     @pytest.mark.asyncio
     async def test_invokes_with_schema(self, mock_llm):
@@ -52,7 +33,6 @@ class TestMarkdownSummariser:
         - Response is not None
         - Response is QueryResponse type when schema provided
         """
-        from product_agent.models.llm_input import LLMInput
 
         llm_input = LLMInput(
             model="mini_deterministic",
@@ -66,64 +46,6 @@ class TestMarkdownSummariser:
 
         assert result is not None
         assert isinstance(result, QueryResponse)
-
-    @pytest.mark.asyncio
-    async def test_invokes_llm_with_markdown(self, mock_llm, tc_markdown_summariser):
-        """
-        Test that markdown_summariser calls invoke.
-
-        Verifies:
-        - invoke is called exactly once
-        - mini_deterministic model is used
-        """
-        tc = tc_markdown_summariser
-
-        await markdown_summariser(
-            title=tc.data["title"],
-            markdown=tc.data["markdown"],
-            llm=mock_llm
-        )
-
-        assert mock_llm.invoke_call_count == 1
-        assert mock_llm.last_model_used == "mini_deterministic"
-
-    @pytest.mark.asyncio
-    async def test_handles_empty_markdown(self, mock_llm):
-        """
-        Test that markdown_summariser handles empty markdown.
-
-        Verifies:
-        - Does not crash on empty input
-        - Returns a result
-        """
-        result = await markdown_summariser(
-            title="Test Product",
-            markdown="",
-            llm=mock_llm
-        )
-
-        assert result is not None
-
-    @pytest.mark.asyncio
-    async def test_handles_long_markdown(self, mock_llm):
-        """
-        Test that markdown_summariser handles long markdown content.
-
-        Verifies:
-        - Handles 20k+ character input
-        - Returns a string result
-        """
-        long_markdown = "x" * 20000
-
-        result = await markdown_summariser(
-            title="Test Product",
-            markdown=long_markdown,
-            llm=mock_llm
-        )
-
-        assert result is not None
-        assert isinstance(result, str)
-
 
 class TestOpenAiClientModelResolution:
     """Unit tests for OpenAI model name resolution."""
@@ -140,8 +62,6 @@ class TestOpenAiClientModelResolution:
         load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY", "test-key")
         client = OpenAiClient(api_key=api_key)
-        
-        from product_agent.models.llm_input import LLMInput
         
         # Create input with short model name
         llm_input = LLMInput(
@@ -243,8 +163,6 @@ class TestGeminiClientModelResolution:
         Verifies:
         - Model name not in _model_configs raises KeyError
         """
-        from product_agent.infrastructure.llm.client import GeminiClient
-        from product_agent.models.llm_input import LLMInput
         
         api_key = "test-key"
         client = GeminiClient(api_key=api_key)
@@ -262,5 +180,44 @@ class TestGeminiClientModelResolution:
         with pytest.raises(KeyError):
             await client.invoke(llm_input)
 
+    @pytest.mark.asyncio
+    async def test_gemini_transform_for_images(
+        self,
+        real_gemini_llm,
+        mock_image_transformer_data
+    ):
+        """Testing the output of the gemini transformation"""
+        with patch.object(
+            real_gemini_llm,
+            "upload_to_file_api",
+            return_value=random.randint(0, 100000)
+        ):
+            transformed_query = await real_gemini_llm.transform_for_images(data=mock_image_transformer_data)
+            assert transformed_query is not None
 
+            for query_piece in transformed_query:
+                print()
+                print("Type: ", type(query_piece))
+                print("Value: ", query_piece)
 
+    @pytest.mark.asyncio
+    async def test_gemini_transform_for_images_large_query(
+        self,
+        real_gemini_llm,
+        mock_image_transformer_data
+    ):
+        """Testing when a large image list is above 20mb"""
+        with patch("src.product_agent.infrastructure.llm.client.calculate_image_size", return_value=21) as mock_calculate_size:
+            with patch.object(
+                real_gemini_llm,
+                "upload_to_file_api",
+                return_value=random.randint(0, 100000)
+            ):
+                transformed_query = await real_gemini_llm.transform_for_images(data=mock_image_transformer_data)
+                assert transformed_query is not None
+                mock_calculate_size.assert_called_once()
+                
+                for query_piece in transformed_query:
+                    print()
+                    print("Type: ", type(query_piece))
+                    print("Value: ", query_piece)

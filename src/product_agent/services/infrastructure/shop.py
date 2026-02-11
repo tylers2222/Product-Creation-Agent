@@ -1,7 +1,7 @@
 import logging
 
 from product_agent.infrastructure.shopify.client import Shop
-from product_agent.infrastructure.shopify.schemas import DraftProduct, DraftResponse
+from product_agent.models.shopify import DraftProduct, DraftResponse
 
 logger = logging.getLogger(__name__)
 

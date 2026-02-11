@@ -1,0 +1,23 @@
+llm_factory:
+  subscriptions:
+    admin:
+      processes:
+        scraper_synthesis:
+          primary: "gemini-2.5-flash"
+          fallback: "gpt-4o-mini"
+          reason: "High volume structured extraction, fast model preferred"
+
+        vector_relevance:
+          primary: "gpt-4o"
+          fallback: "claude-sonnet-4"
+          reason: "Reasoning + tool use for vector DB quality control"
+
+        draft_creation:
+          primary: "gpt-5.2"
+          fallback: "claude-sonnet-4"
+          reason: "Complex structured output with business logic"
+
+        image_classification:
+          primary: "gemini-3-pro-preview"
+          fallback: "gpt-5.2"
+          reason: "Multimodal vision + reasoning, Gemini optimized"

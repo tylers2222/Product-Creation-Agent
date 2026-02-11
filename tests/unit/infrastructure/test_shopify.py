@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 
-from product_agent.infrastructure.shopify.schemas import (
+from product_agent.models.shopify import (
     DraftProduct, DraftResponse, Variant, Option, InventoryAtStores
 )
 from product_agent.infrastructure.shopify.types import Inventory, Inputs

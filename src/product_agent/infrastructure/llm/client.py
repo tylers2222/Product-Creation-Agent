@@ -1,14 +1,20 @@
+import asyncio
+import base64
+import hashlib
 import inspect
-from typing import Protocol, Type
+import datetime
+import io
+from typing import Protocol
+from product_agent.models.image_transformer import ImageTransformer
+from product_agent.utils.image_size_calc import calculate_image_size
 import structlog
 from pydantic import BaseModel
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
 from google import genai
 from google.genai import types
-import datetime
+from google.genai.errors import ClientError
 
-from .prompts import markdown_summariser_prompt, mardown_summariser_system_prompt, GEMINI_MARKDOWN_SUMMARISER_PROMPT
 from .utils import _parse_response
 from ...models.llm_input import LLMInput
 
@@ -20,7 +26,11 @@ class LLMError(Exception):
 class LLM(Protocol):
     """A Protocol defining the methods an LLM should have"""
     async def invoke(self, llm_input: LLMInput) -> str | BaseModel:
+        """Protocol how to invoke LLM class method"""
         ...
+
+    async def transform_for_images(self, data: ImageTransformer):
+        """Protocol on how to structure queries with img data"""
 
 class OpenAiClient:
     """A concrete impl of the open ai LLM's"""
@@ -101,11 +111,37 @@ class OpenAiClient:
         # Theres also meta data there if its wanted including tokens used etc
         return result.content
 
+    async def transform_for_images(self, data: ImageTransformer):
+        """Transform raw data ready for specific LLM provider"""
+        image_len = data.how_many_images()
+        if image_len > 50:
+            raise Exception("ChatGPT max images is 50: Request %s", image_len)
+
+        user_query = []
+        for message in data.order:
+            if message.type == "query":
+                user_query.append({
+                    "type": "input_text",
+                    "text": message.query
+                })
+            else:
+                user_query.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/jpeg;base64,{base64.b64encode(message.image_bytes).decode()}"
+                })
+        logger.debug("OpenAi User query complete", len_user_query=len(user_query))
+        return user_query
+
 class GeminiClient:
     """A class that holds concrete gemini specific impls"""
     def __init__(self, api_key: str):
-        self.api_client = genai.Client(
+        self.vertex_api_client = genai.Client(
             vertexai=True,
+            project="gen-lang-client-0384813764",
+            location="global"
+        )
+
+        self.developer_api_client = genai.Client(
             project="gen-lang-client-0384813764",
             location="us-central1"
         )
@@ -121,7 +157,7 @@ class GeminiClient:
     def _generate_cache(self, system_prompt: str, time_wanted: int):
         logger.debug("Starting %s", inspect.stack()[0][3])
 
-        system_cache = self.api_client.caches.create(
+        system_cache = self.vertex_api_client.caches.create(
             model="gemini-2.0-flash",
             config=types.CreateCachedContentConfig(
                 system_instruction=system_prompt,
@@ -154,15 +190,111 @@ class GeminiClient:
         if llm_input.cache_wanted:
             self._generate_cache(system_prompt=llm_input.system_query, time_wanted=5)
 
-        response = self.api_client.models.generate_content(
+        response = self.vertex_api_client.models.generate_content(
             model=llm_input.model,
             contents=llm_input.user_query,
             config=types.GenerateContentConfig(
                 system_instruction=llm_input.system_query if llm_input.system_query else None,
                 cached_content=self.system_cache_name if llm_input.cache_wanted else None,
-                temperature=0.1
+                temperature=0.1,
+                response_mime_type="application/json" if llm_input.response_schema else "text/plain",
+                response_schema=llm_input.response_schema if llm_input.response_schema else None
             )
         )
 
+        logger.debug("Returned llm response", response=response.text)
         logger.debug("Completed %s", inspect.stack()[0][3], cached_tokens_used=response.usage_metadata.cached_content_token_count)
-        return response
+
+        return response.text
+
+    async def transform_for_images(self, data: ImageTransformer):
+        """
+        Transform raw data ready for specific LLM provider
+        
+        Note:
+            This looks like business logic creep into infrastructure
+            Becuase a workflow is LLM agnostic, it needs to be attached to the client
+            Otherwise it has to call a service based on the type in the service layer
+            Instead of just calling its transform
+        """
+        logger.debug("Starting %s",
+            inspect.stack()[0][3],
+        )
+
+        # Pass the whole query as bytes to the utils helper
+        # The inline gemini bytes passing allows a max of 20mb
+        # IF over then we will need to use the file api
+        total_query_size = calculate_image_size(
+            images=[d.turn_to_bytes() for d in data.order]
+        )
+
+        logger.debug("Total image based query size", size=total_query_size)
+        
+        # Used to return value for gemini specific request
+        user_query = []
+
+        if total_query_size >= 20:
+            # If its over 20mb it will need to be done via the file api
+            logger.debug("Starting process for request over 20mb")
+            coros = []
+            for d in data.order:
+                if d.type == "image":
+                    coros.append(self.upload_to_file_api(
+                        url=d.url,
+                        image_file=io.BytesIO(d.image_bytes)
+                    ))
+
+            file_results = await asyncio.gather(*coros)
+            # This is used to track what index of image we are on
+            # and need to pull from the success list
+            latest_image_index = 0
+            for d in data.order:
+                if d.type == "image":
+                    user_query.append(file_results[latest_image_index])
+                    latest_image_index += 1
+                if d.type == "query":
+                    user_query.append(types.Part.from_text(text=str(d.query)))
+
+            return user_query
+
+        # Total query mb is below 20
+        for d in data.order:
+            if d.type == "image":
+                user_query.append(types.Part.from_bytes(
+                    data=d.image_bytes,
+                    mime_type="image/jpeg"
+                ))
+
+            if d.type == "query":
+                user_query.append(types.Part.from_text(text=str(d.query)))
+
+        logger.debug("Gemini user_query completed", user_query=user_query)
+        return user_query
+    
+    async def upload_to_file_api(
+        self,
+        url: str,
+        image_file: str | io.IOBase
+    ):
+        """
+        Upload to the file api
+        
+        Note: The file name is automatically hashed to meet Gemini API requirements
+        (only lowercase alphanumeric + dashes allowed)
+        """
+        # Hash the URL to create a valid file name
+        # Gemini File API only allows: lowercase alphanumeric + dashes
+        file_name = f"img-{hashlib.md5(url.encode()).hexdigest()}"
+
+        try:
+            return self.developer_api_client.files.upload(
+                file=image_file,
+                config={"name": file_name, "mime_type": "image/jpeg"}
+            )
+
+        except ClientError as ce:
+            logger.debug("Already exists error, trying get method")
+            if "ALREADY_EXISTS" in str(ce):
+                return self.developer_api_client.files.get(name=file_name)
+
+            raise Exception(ce) from ce

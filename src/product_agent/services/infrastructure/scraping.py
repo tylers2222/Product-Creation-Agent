@@ -11,8 +11,12 @@ def getting_urls_svc(query: str, limit: int, url_provider: UrlProvider):
         raise ValueError("Query was empty")
 
     urls = url_provider.get_urls_for_query(query=query, limit=limit)
-    logger.debug("Completed url scrape", urls=urls)
-    return urls
+    # urls are a model object that has 
+    # url, title, description
+    cleaned_urls = [url.url for url in urls]
+
+    logger.debug("Completed url scrape", urls=cleaned_urls)
+    return cleaned_urls
 
 def scraping_url_svc(url: str, scraper: Scraper):
     """Scraping a single url in the service layer"""
@@ -30,6 +34,7 @@ def batch_scraping_url_svc(urls: list[str], scraper: Scraper):
 
     markdowns = scraper.batch_scraper_url_to_markdown(urls=urls)
     logger.debug("Recived markdowns", len_markdowns=len(markdowns))
+
     return markdowns
 
 def scrape_results_svc(search_str: str,

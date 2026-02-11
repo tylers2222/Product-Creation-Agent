@@ -2,9 +2,9 @@ import datetime
 import structlog
 from polyfactory.factories.pydantic_factory import ModelFactory
 
-from product_agent.infrastructure.shopify.schemas import Fields, AllShopifyProducts
+from product_agent.models.shopify import Fields, AllShopifyProducts
 
-from product_agent.infrastructure.shopify.schemas import DraftResponse, DraftProduct
+from product_agent.models.shopify import DraftResponse, DraftProduct
 from product_agent.infrastructure.shopify.types import Inventory, Inputs, SkuSearchResponse, Product
 from product_agent.infrastructure.shopify.exceptions import ShopifyError
 

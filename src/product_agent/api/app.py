@@ -11,7 +11,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from product_agent.core.workflow import create_agent, AgentProtocol
+from product_agent.services.workflows.product_create import create_agent, AgentProtocol
 from product_agent.infrastructure.llm.prompts import format_product_input
 
 from product_agent.api.schemas.request import Job

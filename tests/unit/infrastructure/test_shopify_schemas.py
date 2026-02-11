@@ -3,7 +3,7 @@ Tests for Shopify product schema models.
 """
 import pytest
 
-from product_agent.infrastructure.shopify.schemas import Fields
+from product_agent.models.shopify import Fields
 
 
 # -----------------------------------------------------------------------------

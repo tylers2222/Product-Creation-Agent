@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from product_agent.infrastructure.shopify.schemas import Variant
+from product_agent.models.shopify import Variant
 
 class PromptVariant(BaseModel):
     """Schema for variant data when using format_product_input helper"""

@@ -1,20 +1,30 @@
-"""Content extraction orchestrator that coordinates web scraping with LLM-based information extraction."""
+"""
+Content extraction orchestrator that coordinates 
+web scraping with LLM-based information extraction.
+"""
 
 import asyncio
 import inspect
 import logging
+from product_agent.services.infrastructure.llm import llm_service
+from pydantic import BaseModel
 
 from product_agent.core.agent_configs.scraper import SCRAPER_AGENT_SYSTEM_PROMPT
 from product_agent.models.llm_input import LLMInput
 from product_agent.infrastructure.firecrawl.client import Scraper
 from product_agent.infrastructure.llm.client import LLM
 from product_agent.core.exceptions import NoScraperResult
+from product_agent.models.scraper import ScraperResponse, ScraperSynthesisResponse
 
 from ..infrastructure.scraping import scrape_results_svc
 
 logger = logging.getLogger(__name__)
 
-async def analyse_markdowns_with_llm_svc(markdowns: list[str], llm: LLM, model: str):
+class ScrapedResults(BaseModel):
+    successful_scrapes:     list
+    failed_urls:            list
+
+async def analyse_markdowns_with_llm_svc(markdowns: list[str], llm: LLM, model: str) -> ScrapedResults:
     """Analysing markdown with LLMs in the service layer"""
     logger.debug("Starting %s", inspect.stack()[0][3], len_urls=len(markdowns))
     coros = []
@@ -22,20 +32,33 @@ async def analyse_markdowns_with_llm_svc(markdowns: list[str], llm: LLM, model: 
         llm_config = LLMInput(
             model=model,
             system_query=SCRAPER_AGENT_SYSTEM_PROMPT,
-            user_query=f"Analyse this markdown for product details and return json\n\n{markdown}"
+            user_query=f"Analyse this markdown for product details and return json\n\n{markdown}",
+            response_schema=ScraperSynthesisResponse
         )
-        coros.append(llm.invoke(llm_input=llm_config))
+        coros.append(llm_service(llm_config, llm))
 
-    scrapes = asyncio.gather(coros)
-    logger.debug("Completed scrape in %s", inspect.stack()[0][3], len_scrapes=len(scrapes))
-    return scrapes
-Integration and unit test this service to see how it goes with system caching
+    scrapes =  await asyncio.gather(*coros)
+
+    success_scrapes = []
+    failed_scrapes = []
+    for scrape in scrapes:
+        if scrape.description is None:
+            failed_scrapes.append(scrape.url)
+            continue
+        
+        success_scrapes.append(scrape)
+
+    logger.debug("Completed scrape in %s", inspect.stack()[0][3], len_scrapes=len(success_scrapes), len_failed=len(failed_scrapes))
+    return ScrapedResults(
+        successful_scrapes=success_scrapes,
+        failed_urls=failed_scrapes
+    )
 
 async def scrape_with_llm_svc(search_str: str,
     scraper: Scraper,
     llm: LLM,
     model: str,
-    limit_results=5) -> list:
+    limit_results=5) -> ScrapedResults:
     """
     Orchestrates web scraping followed by LLM-based product information extraction.
 
@@ -64,11 +87,15 @@ async def scrape_with_llm_svc(search_str: str,
     coros = []
     for sites in scrape_result.result:
         user_query = f"{sites}\n\nReturn the product information from this markdown"
-        coros.append(llm.invoke(LLMInput(
-            model=model,
-            system_query=SCRAPER_AGENT_SYSTEM_PROMPT,
-            user_query=user_query
-        )))
+        coros.append(llm_service(
+            LLMInput(
+                model=model,
+                system_query=SCRAPER_AGENT_SYSTEM_PROMPT,
+                user_query=user_query,
+                response_schema=ScraperSynthesisResponse
+            ),
+            llm=llm
+        ))
     
     logger.debug("About to start parralel synthesis", length=len(coros))
 

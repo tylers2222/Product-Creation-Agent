@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from typing import List
 import datetime
 
-from .types import Inventory
+from product_agent.infrastructure.shopify.types import Inventory
 
 class Option(BaseModel):
     option_name: str
@@ -20,20 +20,19 @@ class InventoryAtStores(BaseModel):
     #    return self
 
 class Variant(BaseModel):
-    """ A struct for individaul variants """
+    """ A struct for individaul variants, holds internal data"""
     option1_value: Option = Field(description="A list of the option names -> example: all the sizes of the product")
     option2_value: Option | None = None
     option3_value: Option | None = None
-    
+
     sku: int = Field(description="stock keeping unit, internal knowledge")
     barcode: int = Field(description="barcode, internal knowledge")
-    
+
     price: float
     compare_at: float | None = None
     product_weight: float
 
     inventory_at_stores: InventoryAtStores | None = None
-
 
 class DraftProduct(BaseModel):
     """ The parent struct """
@@ -54,7 +53,7 @@ class DraftProduct(BaseModel):
     def validate_length(self):
         if self.baby_options is not None and len(self.variants) < len(self.baby_options):
             raise ValueError("Number Of Variants is less than athe proposed amount of options")
-        
+
         if self.baby_options is None and len([variant.option2_value for variant in self.variants if variant.option2_value is not None]) > 0:
             raise ValueError("No baby options but more than 1 option in variants found")
         return self
@@ -63,7 +62,7 @@ class DraftProduct(BaseModel):
     @property
     def options(self) -> list[dict]:
         option = []
-        
+
         option1_values = list(dict.fromkeys(variant.option1_value.option_value for variant in self.variants))
         option.append(
             {
@@ -144,6 +143,25 @@ class ShopifyVariantSchema(BaseModel):
             weight_unit=getattr(resource, 'weight_unit', None),
         )
 
+    @classmethod
+    def from_rest_api(cls, data: dict) -> "ShopifyVariantSchema":
+        """Convert REST API JSON response to a Pydantic model."""
+        return cls(
+            id=data.get("id"),
+            product_id=data.get("product_id"),
+            title=data.get("title"),
+            price=data.get("price"),
+            sku=data.get("sku"),
+            barcode=data.get("barcode"),
+            position=data.get("position"),
+            inventory_item_id=data.get("inventory_item_id"),
+            option1=data.get("option1"),
+            option2=data.get("option2"),
+            option3=data.get("option3"),
+            weight=data.get("weight"),
+            weight_unit=data.get("weight_unit"),
+        )
+
 
 class ShopifyProductSchema(BaseModel):
     """Pydantic model for a Shopify product retrieved from the store."""
@@ -174,6 +192,27 @@ class ShopifyProductSchema(BaseModel):
             product_type=getattr(resource, 'product_type', None),
             tags=getattr(resource, 'tags', None),
             status=getattr(resource, 'status', None),
+            variants=variants,
+        )
+
+    @classmethod
+    def from_rest_api(cls, data: dict) -> "ShopifyProductSchema":
+        """Convert REST API JSON response to a Pydantic model."""
+        variants = []
+        if data.get("variants"):
+            variants = [
+                ShopifyVariantSchema.from_rest_api(v)
+                for v in data["variants"]
+            ]
+
+        return cls(
+            id=data.get("id"),
+            title=data.get("title"),
+            body_html=data.get("body_html"),
+            vendor=data.get("vendor"),
+            product_type=data.get("product_type"),
+            tags=data.get("tags"),
+            status=data.get("status"),
             variants=variants,
         )
 

@@ -15,9 +15,10 @@ class Embeddor(Protocol):
         ...
 
 class Embeddings:
-    def __init__(self):
+    def __init__(self, api_key: str):
         self.client = OpenAIEmbeddings(
-            model="text-embedding-3-small"
+            model="text-embedding-3-small",
+            api_key=api_key
         )
 
     def embed_document(self, document: str) -> list[float]:

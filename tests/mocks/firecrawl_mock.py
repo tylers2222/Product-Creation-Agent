@@ -119,6 +119,15 @@ class MockScraperClient:
             query="Rapid supplements cream of rice 1.2kg"
         )
 
+    def get_urls_for_query(self, query: str, limit: int = 5):
+        """Mock implementation of getting urls"""
+        return [
+            "www.fasbfjb.com",
+            "www.asgagw.com",
+            "www.rjhrtyjw.com",
+            "www.qgfgs5.com"
+        ]
+
     def scraper_url_to_markdown(self, url: str):
         """Mock implementation of scraper_url_to_markdown."""
         logger.debug("Called MockScraperClient.scraper_url_to_markdown", url=url)

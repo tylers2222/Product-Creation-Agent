@@ -120,6 +120,14 @@ class TestFirecrawlClientIntegration:
         print()
         print(urls)
 
+        for idx, url in enumerate(urls):
+            print()
+            print("Number: ", idx)
+            print("Url: ", url.url)
+            print("Title: ", url.title)
+            print("Description: ", url.description)
+            print("-"*60)
+
     def test_extracting_url(self, real_scraper):
         """Test using the smart extract feature by FireCrawl"""
         url = "https://www.optimumnutrition.com/en-au/products/gold-standard-100-whey-protein-powder-au"

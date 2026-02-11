@@ -9,7 +9,7 @@ from shopify import Product
 
 from product_agent.api.app import create_app
 from product_agent.infrastructure.llm.prompts import PromptVariant
-from product_agent.infrastructure.shopify.schemas import DraftResponse, Variant, Option, InventoryAtStores, ShopifyProductSchema
+from product_agent.models.shopify import DraftResponse, Variant, Option, InventoryAtStores, ShopifyProductSchema
 from product_agent.db.redis import RedisDatabase
 
 # Create mock data using the PromptVariant structure

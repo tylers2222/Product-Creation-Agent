@@ -4,7 +4,7 @@ Synthesis Agent Configuration.
 Pure configuration - no runtime dependencies.
 This agent evaluates vector search relevance and requeries if needed.
 """
-from src.product_agent.config.agents.config import AgentConfig
+from product_agent.config.agents.config import AgentConfig
 
 SYNTHESIS_AGENT_PROMPT = """You are a vector database search quality control agent.
 

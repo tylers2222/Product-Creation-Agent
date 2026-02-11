@@ -125,7 +125,7 @@ class FirecrawlClient:
     def get_urls_for_query(self, query: str, limit: int = 5) -> list:
         """A function to get urls from our scraper dependency"""
         logger.debug("Starting %s", inspect.stack()[0][3])
-        query_with_location = f"{query} :.au"
+        query_with_location = f"{query} buy online:.au"
 
         search_data = self.client.search(query=query_with_location, limit=limit,
             location="Sydney, Australia")

@@ -6,9 +6,9 @@ Unit tests use mock dependencies, integration tests use real services.
 import pytest
 import uuid
 
-from product_agent.core.workflow import ShopifyProductWorkflow
+from product_agent.services.workflows.product_create import ShopifyProductWorkflow
 from product_agent.infrastructure.llm.prompts import format_product_input, PromptVariant
-from product_agent.infrastructure.shopify.schemas import Option, Variant, InventoryAtStores
+from product_agent.models.shopify import Option, Variant, InventoryAtStores
 from product_agent.config import ServiceContainer, build_service_container
 
 
